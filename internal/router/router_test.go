@@ -8,26 +8,26 @@ func TestLocalAlias(t *testing.T) {
 	}
 }
 
-func TestOpus47(t *testing.T) {
+func TestOpusPassthrough(t *testing.T) {
 	if got := Route("claude-opus-4-7", "red"); got != "passthrough" {
 		t.Errorf("want passthrough, got %q", got)
 	}
 }
 
-func TestOpus45(t *testing.T) {
-	if got := Route("claude-opus-4-5", "red"); got != "passthrough" {
+func TestSonnetPassthrough(t *testing.T) {
+	if got := Route("claude-sonnet-4-6", "red"); got != "passthrough" {
 		t.Errorf("want passthrough, got %q", got)
 	}
 }
 
-func TestOpusLegacy(t *testing.T) {
-	if got := Route("claude-3-opus-20240229", "red"); got != "passthrough" {
+func TestHaikuPassthrough(t *testing.T) {
+	if got := Route("claude-haiku-4-5-20251001", "red"); got != "passthrough" {
 		t.Errorf("want passthrough, got %q", got)
 	}
 }
 
-func TestUnknownDefaultsLocal(t *testing.T) {
-	if got := Route("some-unknown-model", "red"); got != "local" {
-		t.Errorf("want local, got %q", got)
+func TestUnknownPassthrough(t *testing.T) {
+	if got := Route("some-unknown-model", "red"); got != "passthrough" {
+		t.Errorf("want passthrough, got %q", got)
 	}
 }

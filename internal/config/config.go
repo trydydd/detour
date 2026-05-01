@@ -9,10 +9,10 @@ import (
 )
 
 type Config struct {
-	Port      int    `json:"port"`
-	ModelName string `json:"model_name"`
-	ModelAPI  string `json:"model_api"`
-	NoHaiku   bool   `json:"no_haiku"`
+	Port       int    `json:"port"`
+	ModelName  string `json:"model_name"`
+	ModelAPI   string `json:"model_api"`
+	AlsoSonnet bool   `json:"also_sonnet"`
 }
 
 func (c *Config) applyDefaults() {
@@ -78,8 +78,8 @@ func merge(base, flags *Config) *Config {
 	if flags.ModelAPI != "" {
 		out.ModelAPI = flags.ModelAPI
 	}
-	if flags.NoHaiku {
-		out.NoHaiku = true
+	if flags.AlsoSonnet {
+		out.AlsoSonnet = true
 	}
 	return &out
 }

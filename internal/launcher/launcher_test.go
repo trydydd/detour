@@ -42,52 +42,52 @@ func main() {
 	return bin
 }
 
-func cfg(modelName string, port int, noHaiku bool) *config.Config {
+func makeCfg(modelName string, port int, alsoSonnet bool) *config.Config {
 	return &config.Config{
-		Port:      port,
-		ModelName: modelName,
-		ModelAPI:  "http://localhost:8001",
-		NoHaiku:   noHaiku,
+		Port:       port,
+		ModelName:  modelName,
+		ModelAPI:   "http://localhost:8001",
+		AlsoSonnet: alsoSonnet,
 	}
 }
 
 func TestEnvInjected(t *testing.T) {
 	bin := helperBinary(t)
-	out, err := launchCapture(bin, cfg("red", 8888, false), nil)
+	out, err := launchCapture(bin, makeCfg("red", 8888, false), nil)
 	if err != nil {
 		t.Fatalf("launch: %v", err)
 	}
 	assertEnv(t, out, "ANTHROPIC_BASE_URL", "http://localhost:8888")
-	assertEnv(t, out, "ANTHROPIC_DEFAULT_SONNET_MODEL", "red")
-}
-
-func TestHaikuSet(t *testing.T) {
-	bin := helperBinary(t)
-	out, err := launchCapture(bin, cfg("red", 8888, false), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
 	assertEnv(t, out, "ANTHROPIC_DEFAULT_HAIKU_MODEL", "red")
 }
 
-func TestNoHaiku(t *testing.T) {
+func TestSonnetNotSetByDefault(t *testing.T) {
 	bin := helperBinary(t)
-	out, err := launchCapture(bin, cfg("red", 8888, true), nil)
+	out, err := launchCapture(bin, makeCfg("red", 8888, false), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, line := range strings.Split(out, "\n") {
-		if strings.HasPrefix(line, "ENV:ANTHROPIC_DEFAULT_HAIKU_MODEL=") {
-			t.Errorf("ANTHROPIC_DEFAULT_HAIKU_MODEL should not be set with --no-haiku, got %q", line)
+		if strings.HasPrefix(line, "ENV:ANTHROPIC_DEFAULT_SONNET_MODEL=") {
+			t.Errorf("ANTHROPIC_DEFAULT_SONNET_MODEL should not be set by default, got %q", line)
 		}
 	}
+}
+
+func TestAlsoSonnet(t *testing.T) {
+	bin := helperBinary(t)
+	out, err := launchCapture(bin, makeCfg("red", 8888, true), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEnv(t, out, "ANTHROPIC_DEFAULT_SONNET_MODEL", "red")
 }
 
 func TestAPIKeyUnchanged(t *testing.T) {
 	const testKey = "sk-ant-test-12345"
 	t.Setenv("ANTHROPIC_API_KEY", testKey)
 	bin := helperBinary(t)
-	out, err := launchCapture(bin, cfg("red", 8888, false), nil)
+	out, err := launchCapture(bin, makeCfg("red", 8888, false), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestAPIKeyUnchanged(t *testing.T) {
 
 func TestArgsForwarded(t *testing.T) {
 	bin := helperBinary(t)
-	out, err := launchCapture(bin, cfg("red", 8888, false), []string{"--foo", "bar"})
+	out, err := launchCapture(bin, makeCfg("red", 8888, false), []string{"--foo", "bar"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestExitCodePropagated(t *testing.T) {
 	os.WriteFile(src, []byte(code), 0o600)
 	exec.Command("go", "build", "-o", bin, src).Run()
 
-	err := Launch(cfg("red", 8888, false), nil, bin)
+	err := Launch(makeCfg("red", 8888, false), nil, bin)
 	if err == nil {
 		t.Fatal("expected non-nil error for exit code 2")
 	}
