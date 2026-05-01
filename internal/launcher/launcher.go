@@ -16,11 +16,7 @@ func Launch(cfg *config.Config, claudeArgs []string, claudeBin string) error {
 	if claudeBin == "" {
 		claudeBin = "claude"
 	}
-	env := buildEnv(os.Environ(), map[string]string{
-		"ANTHROPIC_BASE_URL":                  proxyURL(cfg),
-		"ANTHROPIC_DEFAULT_SONNET_MODEL":      cfg.ModelName,
-		"ANTHROPIC_DEFAULT_HAIKU_MODEL":       haikuModel(cfg),
-	})
+	env := buildEnv(os.Environ(), envOverrides(cfg))
 	cmd := exec.Command(claudeBin, claudeArgs...)
 	cmd.Env = env
 	cmd.Stdin = os.Stdin
@@ -31,11 +27,7 @@ func Launch(cfg *config.Config, claudeArgs []string, claudeBin string) error {
 
 // launchCapture is a test helper that captures subprocess output.
 func launchCapture(claudeBin string, cfg *config.Config, claudeArgs []string) (string, error) {
-	env := buildEnv(os.Environ(), map[string]string{
-		"ANTHROPIC_BASE_URL":             proxyURL(cfg),
-		"ANTHROPIC_DEFAULT_SONNET_MODEL": cfg.ModelName,
-		"ANTHROPIC_DEFAULT_HAIKU_MODEL":  haikuModel(cfg),
-	})
+	env := buildEnv(os.Environ(), envOverrides(cfg))
 	cmd := exec.Command(claudeBin, claudeArgs...)
 	cmd.Env = env
 	var buf bytes.Buffer
@@ -43,6 +35,17 @@ func launchCapture(claudeBin string, cfg *config.Config, claudeArgs []string) (s
 	cmd.Stderr = &buf
 	err := cmd.Run()
 	return buf.String(), err
+}
+
+func envOverrides(cfg *config.Config) map[string]string {
+	overrides := map[string]string{
+		"ANTHROPIC_BASE_URL":            proxyURL(cfg),
+		"ANTHROPIC_DEFAULT_HAIKU_MODEL": cfg.ModelName,
+	}
+	if cfg.AlsoSonnet {
+		overrides["ANTHROPIC_DEFAULT_SONNET_MODEL"] = cfg.ModelName
+	}
+	return overrides
 }
 
 func buildEnv(base []string, overrides map[string]string) []string {
@@ -71,11 +74,4 @@ func buildEnv(base []string, overrides map[string]string) []string {
 
 func proxyURL(cfg *config.Config) string {
 	return fmt.Sprintf("http://localhost:%d", cfg.Port)
-}
-
-func haikuModel(cfg *config.Config) string {
-	if cfg.NoHaiku {
-		return "" // omit — buildEnv skips empty values
-	}
-	return cfg.ModelName
 }
