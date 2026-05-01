@@ -1,6 +1,6 @@
 BIN := bin/detour
 
-.PHONY: build test run clean
+.PHONY: build test run clean snapshot release-check
 
 build:
 	go build -o $(BIN) ./cmd/detour
@@ -12,4 +12,10 @@ run: build
 	./$(BIN)
 
 clean:
-	rm -rf bin/
+	rm -rf bin/ dist/
+
+snapshot:
+	goreleaser build --snapshot --clean
+
+release-check:
+	goreleaser check
