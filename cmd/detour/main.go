@@ -16,13 +16,15 @@ import (
 	"github.com/trydydd/detour/internal/proxy"
 )
 
+var version = "dev"
+
 func main() {
 	// --- Flags ---
 	flags := &config.Config{}
 	flag.StringVar(&flags.ModelName, "model-name", "", "alias sent as model name to Claude Code (required)")
 	flag.StringVar(&flags.ModelAPI, "model-api", "", "base URL of local inference server, e.g. http://192.168.0.28 (required)")
 	flag.IntVar(&flags.Port, "port", 0, "proxy listen port (default 8888)")
-	flag.BoolVar(&flags.NoHaiku, "no-haiku", false, "skip overriding haiku model tier")
+	flag.BoolVar(&flags.AlsoSonnet, "also-sonnet", false, "also route sonnet-tier requests to local model")
 	flag.Parse()
 	claudeArgs := flag.Args()
 
