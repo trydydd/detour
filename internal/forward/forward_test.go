@@ -50,6 +50,43 @@ func TestForwardsAllowedHeaders(t *testing.T) {
 	}
 }
 
+func TestDoLocalStripsAuthHeader(t *testing.T) {
+	var gotAuth string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.WriteHeader(200)
+	}))
+	defer upstream.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader("{}"))
+	req.Header.Set("Authorization", "Bearer sk-ant-secret")
+	req.Header.Set("Anthropic-Version", "2023-06-01")
+	rec := httptest.NewRecorder()
+	DoLocal(rec, req, upstream.URL)
+
+	if gotAuth != "" {
+		t.Errorf("DoLocal must not forward Authorization to local backend, got %q", gotAuth)
+	}
+}
+
+func TestDoForwardsAuthHeader(t *testing.T) {
+	var gotAuth string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.WriteHeader(200)
+	}))
+	defer upstream.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader("{}"))
+	req.Header.Set("Authorization", "Bearer sk-ant-secret")
+	rec := httptest.NewRecorder()
+	Do(rec, req, upstream.URL)
+
+	if gotAuth != "Bearer sk-ant-secret" {
+		t.Errorf("Do must forward Authorization to Anthropic backend, got %q", gotAuth)
+	}
+}
+
 func TestStripsHostHeader(t *testing.T) {
 	var gotHost string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

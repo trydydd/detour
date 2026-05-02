@@ -58,29 +58,22 @@ func TestEnvInjected(t *testing.T) {
 		t.Fatalf("launch: %v", err)
 	}
 	assertEnv(t, out, "ANTHROPIC_BASE_URL", "http://localhost:8888")
-	assertEnv(t, out, "ANTHROPIC_DEFAULT_HAIKU_MODEL", "red")
 }
 
-func TestSonnetNotSetByDefault(t *testing.T) {
+func TestTierOverridesNotSet(t *testing.T) {
 	bin := helperBinary(t)
 	out, err := launchCapture(bin, makeCfg("red", 8888, false), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "ENV:ANTHROPIC_DEFAULT_HAIKU_MODEL=") {
+			t.Errorf("ANTHROPIC_DEFAULT_HAIKU_MODEL should not be set, got %q", line)
+		}
 		if strings.HasPrefix(line, "ENV:ANTHROPIC_DEFAULT_SONNET_MODEL=") {
-			t.Errorf("ANTHROPIC_DEFAULT_SONNET_MODEL should not be set by default, got %q", line)
+			t.Errorf("ANTHROPIC_DEFAULT_SONNET_MODEL should not be set, got %q", line)
 		}
 	}
-}
-
-func TestAlsoSonnet(t *testing.T) {
-	bin := helperBinary(t)
-	out, err := launchCapture(bin, makeCfg("red", 8888, true), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertEnv(t, out, "ANTHROPIC_DEFAULT_SONNET_MODEL", "red")
 }
 
 func TestAPIKeyUnchanged(t *testing.T) {
