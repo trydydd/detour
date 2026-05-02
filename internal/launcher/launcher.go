@@ -39,7 +39,8 @@ func launchCapture(claudeBin string, cfg *config.Config, claudeArgs []string) (s
 
 func envOverrides(cfg *config.Config) map[string]string {
 	return map[string]string{
-		"ANTHROPIC_BASE_URL": proxyURL(cfg),
+		"ANTHROPIC_BASE_URL":             proxyURL(cfg),
+		"ANTHROPIC_CUSTOM_MODEL_OPTION":  cfg.ModelName,
 	}
 }
 

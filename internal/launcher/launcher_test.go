@@ -60,20 +60,13 @@ func TestEnvInjected(t *testing.T) {
 	assertEnv(t, out, "ANTHROPIC_BASE_URL", "http://localhost:8888")
 }
 
-func TestTierOverridesNotSet(t *testing.T) {
+func TestCustomModelOptionSet(t *testing.T) {
 	bin := helperBinary(t)
 	out, err := launchCapture(bin, makeCfg("red", 8888, false), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, line := range strings.Split(out, "\n") {
-		if strings.HasPrefix(line, "ENV:ANTHROPIC_DEFAULT_HAIKU_MODEL=") {
-			t.Errorf("ANTHROPIC_DEFAULT_HAIKU_MODEL should not be set, got %q", line)
-		}
-		if strings.HasPrefix(line, "ENV:ANTHROPIC_DEFAULT_SONNET_MODEL=") {
-			t.Errorf("ANTHROPIC_DEFAULT_SONNET_MODEL should not be set, got %q", line)
-		}
-	}
+	assertEnv(t, out, "ANTHROPIC_CUSTOM_MODEL_OPTION", "red")
 }
 
 func TestAPIKeyUnchanged(t *testing.T) {
