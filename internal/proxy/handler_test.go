@@ -144,6 +144,148 @@ func TestHealthRegistered(t *testing.T) {
 	}
 }
 
+func TestLocalStripsResponseThinking(t *testing.T) {
+	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"type":"message","content":[{"type":"thinking","thinking":"hmm","signature":"fakesig"},{"type":"text","text":"Hello"}]}`)
+	}))
+	defer local.Close()
+
+	mux := NewMux(testConfig(local.URL, "http://unused"))
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"red","messages":[],"max_tokens":10}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	var resp map[string]json.RawMessage
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	var content []struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(resp["content"], &content); err != nil {
+		t.Fatalf("decode content: %v", err)
+	}
+	for _, block := range content {
+		if block.Type == "thinking" {
+			t.Error("thinking block should be stripped from local response")
+		}
+	}
+	if len(content) != 1 || content[0].Type != "text" {
+		t.Errorf("expected only text block, got %+v", content)
+	}
+}
+
+func TestLocalStripsStreamingThinking(t *testing.T) {
+	sse := "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\"}}\n\n" +
+		"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"hmm\"}}\n\n" +
+		"event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n" +
+		"event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n" +
+		"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\n" +
+		"event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\n"
+
+	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, sse)
+	}))
+	defer local.Close()
+
+	mux := NewMux(testConfig(local.URL, "http://unused"))
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"red","messages":[],"max_tokens":10,"stream":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	body := rec.Body.String()
+	if strings.Contains(body, "thinking") {
+		t.Errorf("thinking events should be stripped from streaming response, got:\n%s", body)
+	}
+	if !strings.Contains(body, "text_delta") {
+		t.Error("text events should be preserved in streaming response")
+	}
+}
+
+func TestLocalStripsThinking(t *testing.T) {
+	var gotBody []byte
+	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		io.WriteString(w, `{"id":"msg_1","type":"message"}`)
+	}))
+	defer local.Close()
+
+	mux := NewMux(testConfig(local.URL, "http://unused"))
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"red","messages":[],"max_tokens":10,"thinking":{"type":"enabled","budget_tokens":5000}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(gotBody, &body); err != nil {
+		t.Fatalf("local received invalid JSON: %v", err)
+	}
+	if _, ok := body["thinking"]; ok {
+		t.Error("thinking field should be stripped from local requests")
+	}
+}
+
+func TestLocalFiltersThinkingBeta(t *testing.T) {
+	var gotBeta string
+	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBeta = r.Header.Get("Anthropic-Beta")
+		io.WriteString(w, `{"id":"msg_1","type":"message"}`)
+	}))
+	defer local.Close()
+
+	mux := NewMux(testConfig(local.URL, "http://unused"))
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"red","messages":[],"max_tokens":10}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Anthropic-Beta", "interleaved-thinking-2025-05-14,prompt-caching-2024-07-31")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if strings.Contains(gotBeta, "thinking") {
+		t.Errorf("thinking beta should be stripped, got: %q", gotBeta)
+	}
+	if !strings.Contains(gotBeta, "prompt-caching") {
+		t.Errorf("non-thinking beta should be preserved, got: %q", gotBeta)
+	}
+}
+
+func TestPassthroughPreservesThinking(t *testing.T) {
+	var gotBody []byte
+	var gotBeta string
+	passthrough := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		gotBeta = r.Header.Get("Anthropic-Beta")
+		io.WriteString(w, `{"id":"msg_2","type":"message"}`)
+	}))
+	defer passthrough.Close()
+
+	mux := NewMux(testConfig("http://unused", passthrough.URL))
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"claude-opus-4-7","messages":[],"max_tokens":10,"thinking":{"type":"enabled","budget_tokens":5000}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Anthropic-Beta", "interleaved-thinking-2025-05-14")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(gotBody, &body); err != nil {
+		t.Fatalf("passthrough received invalid JSON: %v", err)
+	}
+	if _, ok := body["thinking"]; !ok {
+		t.Error("thinking field should be preserved for passthrough requests")
+	}
+	if gotBeta != "interleaved-thinking-2025-05-14" {
+		t.Errorf("beta header should be preserved for passthrough, got: %q", gotBeta)
+	}
+}
+
 func assertErrorJSON(t *testing.T, body string) {
 	t.Helper()
 	var v map[string]any

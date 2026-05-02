@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/trydydd/detour/internal/forward"
 	"github.com/trydydd/detour/internal/router"
@@ -60,11 +61,51 @@ func makeMessagesHandler(cfg *Config) http.HandlerFunc {
 			targetURL = cfg.AnthropicUpstreamURL + "/v1/messages"
 		} else {
 			targetURL = cfg.LocalUpstreamURL + "/v1/messages"
+			// Local inference servers don't sign thinking blocks. Strip thinking
+			// from the request so the model never generates blocks with invalid
+			// signatures that would break subsequent passthrough requests.
+			body = stripThinkingFromBody(body)
+			if v := r.Header.Get("Anthropic-Beta"); v != "" {
+				r.Header.Set("Anthropic-Beta", filterThinkingBeta(v))
+			}
 		}
 
 		r.Body = io.NopCloser(bytes.NewReader(body))
-		forward.Do(w, r, targetURL)
+		if backend == "passthrough" {
+			forward.Do(w, r, targetURL)
+		} else {
+			forward.DoLocal(w, r, targetURL)
+		}
 	}
+}
+
+// stripThinkingFromBody removes the "thinking" field from a JSON request body.
+func stripThinkingFromBody(body []byte) []byte {
+	var req map[string]json.RawMessage
+	if err := json.Unmarshal(body, &req); err != nil {
+		return body
+	}
+	if _, ok := req["thinking"]; !ok {
+		return body
+	}
+	delete(req, "thinking")
+	out, err := json.Marshal(req)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+// filterThinkingBeta removes thinking-related tokens from an Anthropic-Beta header value.
+func filterThinkingBeta(v string) string {
+	parts := strings.Split(v, ",")
+	kept := parts[:0]
+	for _, p := range parts {
+		if !strings.Contains(strings.TrimSpace(p), "thinking") {
+			kept = append(kept, p)
+		}
+	}
+	return strings.Join(kept, ",")
 }
 
 type peekRequest struct {
