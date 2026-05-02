@@ -24,7 +24,6 @@ func main() {
 	flag.StringVar(&flags.ModelName, "model-name", "", "alias sent as model name to Claude Code (required)")
 	flag.StringVar(&flags.ModelAPI, "model-api", "", "base URL of local inference server, e.g. http://192.168.0.28 (required)")
 	flag.IntVar(&flags.Port, "port", 0, "proxy listen port (default 8888)")
-	flag.BoolVar(&flags.AlsoSonnet, "also-sonnet", false, "also route sonnet-tier requests to local model")
 	flag.Parse()
 	claudeArgs := flag.Args()
 
@@ -70,7 +69,7 @@ func main() {
 	if err := waitForPort(addr, 3*time.Second); err != nil {
 		fatalf("proxy did not start: %v", err)
 	}
-	fmt.Fprintf(os.Stderr, "detour: proxy on %s  [%s → local | opus → anthropic]\n", addr, cfg.ModelName)
+	fmt.Fprintf(os.Stderr, "detour: proxy on %s  [%s → local | * → anthropic]\n", addr, cfg.ModelName)
 
 	// --- Launch claude (or just serve if no claude found) ---
 	launchErr := launcher.Launch(cfg, claudeArgs, "")

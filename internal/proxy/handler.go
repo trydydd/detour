@@ -43,7 +43,7 @@ func makeModelsHandler(cfg *Config) http.HandlerFunc {
 			writeError(w, http.StatusInternalServerError, "proxy_error", err.Error())
 			return
 		}
-		for _, h := range []string{"Authorization", "Anthropic-Version", "Anthropic-Beta"} {
+		for _, h := range []string{"X-Api-Key", "Authorization", "Anthropic-Version", "Anthropic-Beta"} {
 			if v := r.Header.Get(h); v != "" {
 				outReq.Header.Set(h, v)
 			}

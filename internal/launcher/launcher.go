@@ -38,14 +38,9 @@ func launchCapture(claudeBin string, cfg *config.Config, claudeArgs []string) (s
 }
 
 func envOverrides(cfg *config.Config) map[string]string {
-	overrides := map[string]string{
-		"ANTHROPIC_BASE_URL":            proxyURL(cfg),
-		"ANTHROPIC_DEFAULT_HAIKU_MODEL": cfg.ModelName,
+	return map[string]string{
+		"ANTHROPIC_BASE_URL": proxyURL(cfg),
 	}
-	if cfg.AlsoSonnet {
-		overrides["ANTHROPIC_DEFAULT_SONNET_MODEL"] = cfg.ModelName
-	}
-	return overrides
 }
 
 func buildEnv(base []string, overrides map[string]string) []string {

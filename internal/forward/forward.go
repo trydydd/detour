@@ -11,7 +11,14 @@ import (
 
 var allowedHeaders = []string{
 	"Content-Type",
+	"X-Api-Key",
 	"Authorization",
+	"Anthropic-Version",
+	"Anthropic-Beta",
+}
+
+var allowedLocalHeaders = []string{
+	"Content-Type",
 	"Anthropic-Version",
 	"Anthropic-Beta",
 }
@@ -81,7 +88,7 @@ func DoLocal(w http.ResponseWriter, r *http.Request, targetURL string) {
 		writeError(w, http.StatusInternalServerError, "proxy_error", err.Error())
 		return
 	}
-	for _, h := range allowedHeaders {
+	for _, h := range allowedLocalHeaders {
 		if v := r.Header.Get(h); v != "" {
 			outReq.Header.Set(h, v)
 		}
