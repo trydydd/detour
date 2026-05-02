@@ -47,3 +47,7 @@ Always use jCodemunch-MCP tools for code navigation. Never fall back to Read, Gr
 - bounded symbol bundle → `get_context_bundle` (add token_budget= to cap size)
 
 **After editing a file:** `index_file { "path": "/abs/path/to/file" }` to keep the index fresh.
+
+## Detour Proxy Notes
+
+The `/v1/models` endpoint on the proxy passes through to Anthropic and cannot be tested with `curl` without valid Anthropic auth credentials. Do not suggest testing `/v1/models` with curl or curl alternatives—this will always fail with an authentication error. The proxy endpoint is only testable by Claude Code itself, which has internal authentication credentials.

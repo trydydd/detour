@@ -306,35 +306,6 @@ func TestModelsHandlerForwardsXApiKey(t *testing.T) {
 	}
 }
 
-func TestModelsHandlerInjectsLocalModel(t *testing.T) {
-	anthropic := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"object":"list","data":[{"id":"claude-opus-4-7","type":"model"}]}`)
-	}))
-	defer anthropic.Close()
-
-	mux := NewMux(testConfig("http://unused", anthropic.URL))
-	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
-	req.Header.Set("X-Api-Key", "test-key-123")
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-
-	var resp map[string]json.RawMessage
-	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	var data []map[string]any
-	if err := json.Unmarshal(resp["data"], &data); err != nil {
-		t.Fatalf("decode data: %v", err)
-	}
-
-	if len(data) == 0 {
-		t.Fatal("models list is empty")
-	}
-	if id, ok := data[0]["id"].(string); !ok || id != "red" {
-		t.Errorf("first model should be 'red', got %v", data[0]["id"])
-	}
-}
 
 func assertErrorJSON(t *testing.T, body string) {
 	t.Helper()

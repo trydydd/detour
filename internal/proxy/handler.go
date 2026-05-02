@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/trydydd/detour/internal/forward"
 	"github.com/trydydd/detour/internal/router"
@@ -33,48 +31,10 @@ func NewMux(cfg *Config) *http.ServeMux {
 	return mux
 }
 
-// makeModelsHandler proxies GET /v1/models to Anthropic and injects the local
-// model into the response so Claude Code recognises it and displays its name.
+// makeModelsHandler proxies /v1/models to Anthropic unchanged.
 func makeModelsHandler(cfg *Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		outReq, err := http.NewRequestWithContext(r.Context(), r.Method,
-			cfg.AnthropicUpstreamURL+"/v1/models", r.Body)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "proxy_error", err.Error())
-			return
-		}
-		for _, h := range []string{"X-Api-Key", "Authorization", "Anthropic-Version", "Anthropic-Beta"} {
-			if v := r.Header.Get(h); v != "" {
-				outReq.Header.Set(h, v)
-			}
-		}
-		resp, err := http.DefaultClient.Do(outReq)
-		if err != nil {
-			writeError(w, http.StatusBadGateway, "proxy_error", "upstream unavailable: "+err.Error())
-			return
-		}
-		defer resp.Body.Close()
-
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			writeError(w, http.StatusBadGateway, "proxy_error", "failed to read response")
-			return
-		}
-		if resp.StatusCode == http.StatusOK {
-			body = injectLocalModel(body, cfg.ModelName)
-		}
-
-		for k, vv := range resp.Header {
-			if strings.EqualFold(k, "content-length") || strings.EqualFold(k, "transfer-encoding") {
-				continue
-			}
-			for _, v := range vv {
-				w.Header().Add(k, v)
-			}
-		}
-		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-		w.WriteHeader(resp.StatusCode)
-		w.Write(body)
+		forward.Do(w, r, cfg.AnthropicUpstreamURL+"/v1/models")
 	}
 }
 
@@ -83,43 +43,6 @@ func makePassthroughHandler(cfg *Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		forward.Do(w, r, cfg.AnthropicUpstreamURL+r.URL.RequestURI())
 	}
-}
-
-// injectLocalModel prepends the configured local model to an Anthropic models
-// list response so Claude Code recognises the alias and displays it by name.
-func injectLocalModel(body []byte, modelName string) []byte {
-	var list map[string]json.RawMessage
-	if err := json.Unmarshal(body, &list); err != nil {
-		return body
-	}
-	dataRaw, ok := list["data"]
-	if !ok {
-		return body
-	}
-	var data []json.RawMessage
-	if err := json.Unmarshal(dataRaw, &data); err != nil {
-		return body
-	}
-	entry, err := json.Marshal(map[string]any{
-		"type":         "model",
-		"id":           modelName,
-		"display_name": modelName,
-		"created_at":   time.Now().UTC().Format(time.RFC3339),
-	})
-	if err != nil {
-		return body
-	}
-	data = append([]json.RawMessage{entry}, data...)
-	newData, err := json.Marshal(data)
-	if err != nil {
-		return body
-	}
-	list["data"] = newData
-	out, err := json.Marshal(list)
-	if err != nil {
-		return body
-	}
-	return out
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -212,4 +135,3 @@ func peekModel(body []byte) (string, error) {
 	}
 	return pr.Model, nil
 }
-
