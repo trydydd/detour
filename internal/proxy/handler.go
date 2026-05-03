@@ -12,6 +12,7 @@ import (
 )
 
 const version = "0.1.0"
+const maxRequestBytes = 10 << 20 // 10 MiB
 
 // Config holds the proxy routing configuration.
 type Config struct {
@@ -24,9 +25,9 @@ func NewMux(cfg *Config) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
 	if cfg != nil {
-		mux.HandleFunc("/v1/messages", makeMessagesHandler(cfg))
-		mux.HandleFunc("/v1/models", makeModelsHandler(cfg))
-		mux.HandleFunc("/", makePassthroughHandler(cfg))
+		mux.HandleFunc("/v1/messages", authMiddleware(makeMessagesHandler(cfg)))
+		mux.HandleFunc("/v1/models", authMiddleware(makeModelsHandler(cfg)))
+		mux.HandleFunc("/", authMiddleware(makePassthroughHandler(cfg)))
 	}
 	return mux
 }
@@ -55,9 +56,13 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func makeMessagesHandler(cfg *Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
+		body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBytes+1))
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_request", "could not read request body")
+			return
+		}
+		if len(body) > maxRequestBytes {
+			writeError(w, http.StatusRequestEntityTooLarge, "invalid_request", "request body too large")
 			return
 		}
 

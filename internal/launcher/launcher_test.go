@@ -53,7 +53,7 @@ func makeCfg(modelName string, port int, alsoSonnet bool) *config.Config {
 
 func TestEnvInjected(t *testing.T) {
 	bin := helperBinary(t)
-	out, err := launchCapture(bin, makeCfg("red", 8888, false), nil)
+	out, err := launchCapture(bin, makeCfg("red", 8888, false), nil, "")
 	if err != nil {
 		t.Fatalf("launch: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestEnvInjected(t *testing.T) {
 
 func TestCustomModelOptionSet(t *testing.T) {
 	bin := helperBinary(t)
-	out, err := launchCapture(bin, makeCfg("red", 8888, false), nil)
+	out, err := launchCapture(bin, makeCfg("red", 8888, false), nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestAPIKeyUnchanged(t *testing.T) {
 	const testKey = "sk-ant-test-12345"
 	t.Setenv("ANTHROPIC_API_KEY", testKey)
 	bin := helperBinary(t)
-	out, err := launchCapture(bin, makeCfg("red", 8888, false), nil)
+	out, err := launchCapture(bin, makeCfg("red", 8888, false), nil, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,13 +82,23 @@ func TestAPIKeyUnchanged(t *testing.T) {
 
 func TestArgsForwarded(t *testing.T) {
 	bin := helperBinary(t)
-	out, err := launchCapture(bin, makeCfg("red", 8888, false), []string{"--foo", "bar"})
+	out, err := launchCapture(bin, makeCfg("red", 8888, false), []string{"--foo", "bar"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out, "ARGS:--foo,bar") {
 		t.Errorf("args not forwarded; output:\n%s", out)
 	}
+}
+
+func TestAuthTokenInjected(t *testing.T) {
+	bin := helperBinary(t)
+	const token = "deadbeef1234"
+	out, err := launchCapture(bin, makeCfg("red", 8888, false), nil, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEnv(t, out, "ANTHROPIC_DETOUR_AUTH", token)
 }
 
 func TestExitCodePropagated(t *testing.T) {
@@ -99,7 +109,7 @@ func TestExitCodePropagated(t *testing.T) {
 	os.WriteFile(src, []byte(code), 0o600)
 	exec.Command("go", "build", "-o", bin, src).Run()
 
-	err := Launch(makeCfg("red", 8888, false), nil, bin)
+	err := Launch(makeCfg("red", 8888, false), nil, bin, "")
 	if err == nil {
 		t.Fatal("expected non-nil error for exit code 2")
 	}
