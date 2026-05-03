@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"net"
@@ -42,10 +44,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	if warn := config.CleartextUpstreamWarning(cfg.ModelAPI); warn != "" {
+		fmt.Fprintln(os.Stderr, warn)
+	}
+
 	// Save updated config for next run.
 	if err := cfg.Save(cfgDir); err != nil {
 		fmt.Fprintf(os.Stderr, "detour: warning: could not save config: %v\n", err)
 	}
+
+	// --- Generate per-launch auth token and make it available to the proxy ---
+	authToken := generateAuthToken()
+	os.Setenv("ANTHROPIC_DETOUR_AUTH", authToken)
 
 	// --- Start proxy ---
 	proxyCfg := &proxy.Config{
@@ -54,7 +64,7 @@ func main() {
 		AnthropicUpstreamURL: "https://api.anthropic.com",
 	}
 	mux := proxy.NewMux(proxyCfg)
-	addr := fmt.Sprintf(":%d", cfg.Port)
+	addr := buildListenAddr(cfg.Port)
 	srv := &http.Server{Addr: addr, Handler: mux}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -72,7 +82,7 @@ func main() {
 	fmt.Fprintf(os.Stderr, "detour: proxy on %s  [%s → local | * → anthropic]\n", addr, cfg.ModelName)
 
 	// --- Launch claude (or just serve if no claude found) ---
-	launchErr := launcher.Launch(cfg, claudeArgs, "")
+	launchErr := launcher.Launch(cfg, claudeArgs, "", authToken)
 	if launchErr != nil {
 		fmt.Fprintln(os.Stderr, "detour:", launchErr)
 	}
@@ -112,4 +122,16 @@ func waitForPort(addr string, timeout time.Duration) error {
 func fatalf(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "detour: "+format+"\n", args...)
 	os.Exit(1)
+}
+
+func buildListenAddr(port int) string {
+	return "127.0.0.1:" + fmt.Sprint(port)
+}
+
+func generateAuthToken() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		fatalf("generate auth token: %v", err)
+	}
+	return hex.EncodeToString(b)
 }
