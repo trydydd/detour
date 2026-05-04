@@ -1,6 +1,7 @@
 package forward
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -165,6 +166,128 @@ func TestUpstream4xxForwarded(t *testing.T) {
 
 	if rec.Code != 429 {
 		t.Errorf("want 429, got %d", rec.Code)
+	}
+}
+
+func TestPatchMessageStartAddsBothFields(t *testing.T) {
+	in := []byte(`{"type":"message_start","message":{"id":"x","content":[],"model":"red","stop_reason":null,"usage":{"input_tokens":1,"output_tokens":0}}}`)
+	out, changed := patchMessageStart(in)
+	if !changed {
+		t.Fatal("expected patch, got none")
+	}
+	var ev struct {
+		Message struct {
+			Type string `json:"type"`
+			Role string `json:"role"`
+			ID   string `json:"id"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(out, &ev); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if ev.Message.Type != "message" {
+		t.Errorf("type: want %q, got %q", "message", ev.Message.Type)
+	}
+	if ev.Message.Role != "assistant" {
+		t.Errorf("role: want %q, got %q", "assistant", ev.Message.Role)
+	}
+	if ev.Message.ID != "x" {
+		t.Errorf("id: existing field overwritten or lost: %q", ev.Message.ID)
+	}
+}
+
+func TestPatchMessageStartAddsOnlyMissingField(t *testing.T) {
+	// type already present; only role should be added.
+	in := []byte(`{"type":"message_start","message":{"id":"x","type":"message","content":[]}}`)
+	out, changed := patchMessageStart(in)
+	if !changed {
+		t.Fatal("expected patch when role missing")
+	}
+	if !strings.Contains(string(out), `"role":"assistant"`) {
+		t.Errorf("role not added: %s", out)
+	}
+	// role already present; only type should be added.
+	in = []byte(`{"type":"message_start","message":{"id":"x","role":"assistant","content":[]}}`)
+	out, changed = patchMessageStart(in)
+	if !changed {
+		t.Fatal("expected patch when type missing")
+	}
+	if !strings.Contains(string(out), `"type":"message"`) {
+		t.Errorf("type not added: %s", out)
+	}
+}
+
+func TestPatchMessageStartUnchangedWhenComplete(t *testing.T) {
+	in := []byte(`{"type":"message_start","message":{"id":"x","type":"message","role":"assistant","content":[]}}`)
+	out, changed := patchMessageStart(in)
+	if changed {
+		t.Errorf("expected no change, got patched output: %s", out)
+	}
+	if string(out) != string(in) {
+		t.Errorf("bytes mutated even though changed=false")
+	}
+}
+
+func TestPatchMessageStartIgnoresOtherEventTypes(t *testing.T) {
+	in := []byte(`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}`)
+	out, changed := patchMessageStart(in)
+	if changed {
+		t.Errorf("non-message_start event should not be patched: %s", out)
+	}
+}
+
+func TestStreamingPatchesVLLMMessageStart(t *testing.T) {
+	// vLLM-shaped SSE: message_start lacks type and role on the inner message.
+	stream := "event: message_start\n" +
+		`data: {"type":"message_start","message":{"id":"chatcmpl-1","content":[],"model":"red","stop_reason":null,"usage":{"input_tokens":1,"output_tokens":0}}}` + "\n\n" +
+		"event: content_block_start\n" +
+		`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}` + "\n\n" +
+		"event: content_block_delta\n" +
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}` + "\n\n" +
+		"event: message_stop\n" +
+		`data: {"type":"message_stop"}` + "\n\n"
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, stream)
+	}))
+	defer upstream.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"stream":true}`))
+	rec := httptest.NewRecorder()
+	DoLocal(rec, req, upstream.URL)
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `"type":"message"`) {
+		t.Errorf("message_start was not patched with type:\n%s", body)
+	}
+	if !strings.Contains(body, `"role":"assistant"`) {
+		t.Errorf("message_start was not patched with role:\n%s", body)
+	}
+	// non-message_start events must remain unmodified
+	if !strings.Contains(body, `"type":"content_block_delta"`) || !strings.Contains(body, `"text":"hi"`) {
+		t.Errorf("non-message_start events were corrupted:\n%s", body)
+	}
+}
+
+func TestStreamingPreservesCompleteMessageStart(t *testing.T) {
+	// Already-complete message_start should be byte-preserved.
+	complete := `{"type":"message_start","message":{"id":"chatcmpl-2","type":"message","role":"assistant","content":[],"model":"red","stop_reason":null,"usage":{"input_tokens":1,"output_tokens":0}}}`
+	stream := "event: message_start\ndata: " + complete + "\n\n" +
+		"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, stream)
+	}))
+	defer upstream.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"stream":true}`))
+	rec := httptest.NewRecorder()
+	DoLocal(rec, req, upstream.URL)
+
+	if !strings.Contains(rec.Body.String(), "data: "+complete) {
+		t.Errorf("complete message_start payload was modified:\n%s", rec.Body.String())
 	}
 }
 
