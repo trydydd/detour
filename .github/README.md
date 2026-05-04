@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/detour.svg" alt="DETOUR" width="600">
+  <img src="detour.svg" alt="DETOUR" width="600">
 </p>
 
 # detour
