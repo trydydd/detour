@@ -27,7 +27,6 @@ This means modes that switch models per-turn — like `claude --model opusplan` 
 - A local inference server that speaks the **Anthropic Messages API natively**:
   - **vLLM**: `vllm serve Qwen/Qwen2.5-Coder-7B-Instruct --served-model-name red --enable-auto-tool-choice --tool-call-parser hermes`
   - **llama.cpp server**: `llama-server --model model.gguf --alias red`
-- A real Anthropic API key (used for passthrough turns)
 
 > The `--served-model-name` (vLLM) or `--alias` (llama.cpp) **must match** your `--model-name` flag.
 
