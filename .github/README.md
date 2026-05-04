@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="detour.svg" alt="DETOUR" width="600">
+  <img src=".github/detour.svg" alt="DETOUR" width="600">
 </p>
 
 # detour
@@ -7,7 +7,7 @@
 A single Go binary that routes Claude Code's model requests between a local inference server and the real Anthropic API.
 
 ```
-detour --model-name red --model-api http://192.168.0.28
+detour --model-name red --model-api http://192.168.0.28:8000
 ```
 
 That's it. Detour starts a local proxy, injects the right env vars, and launches Claude Code as a subprocess. Your existing `~/.claude/settings.json` is never touched.
