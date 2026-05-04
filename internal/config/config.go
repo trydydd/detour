@@ -10,10 +10,9 @@ import (
 )
 
 type Config struct {
-	Port       int    `json:"port"`
-	ModelName  string `json:"model_name"`
-	ModelAPI   string `json:"model_api"`
-	AlsoSonnet bool   `json:"also_sonnet"`
+	Port      int    `json:"port"`
+	ModelName string `json:"model_name"`
+	ModelAPI  string `json:"model_api"`
 }
 
 func (c *Config) applyDefaults() {
@@ -135,9 +134,6 @@ func merge(base, flags *Config) *Config {
 	}
 	if flags.ModelAPI != "" {
 		out.ModelAPI = flags.ModelAPI
-	}
-	if flags.AlsoSonnet {
-		out.AlsoSonnet = true
 	}
 	return &out
 }
