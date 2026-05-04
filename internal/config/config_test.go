@@ -13,18 +13,14 @@ func TestDefaults(t *testing.T) {
 	if cfg.Port != 8888 {
 		t.Errorf("default port: want 8888, got %d", cfg.Port)
 	}
-	if cfg.AlsoSonnet != false {
-		t.Error("default AlsoSonnet should be false")
-	}
 }
 
 func TestSaveLoad(t *testing.T) {
 	dir := t.TempDir()
 	orig := &Config{
-		Port:       9000,
-		ModelName:  "red",
-		ModelAPI:   "http://192.168.0.28:8000",
-		AlsoSonnet: true,
+		Port:      9000,
+		ModelName: "red",
+		ModelAPI:  "http://192.168.0.28:8000",
 	}
 	if err := orig.Save(dir); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -120,7 +116,7 @@ func TestLoadRejectsInsecurePermissions(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
 	// Write a valid config with world-readable permissions
-	data := `{"port":8888,"model_name":"x","model_api":"http://x:8000","also_sonnet":false}`
+	data := `{"port":8888,"model_name":"x","model_api":"http://x:8000"}`
 	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +129,7 @@ func TestLoadRejectsInsecurePermissions(t *testing.T) {
 func TestLoadAcceptsSecurePermissions(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
-	data := `{"port":8888,"model_name":"x","model_api":"http://x:8000","also_sonnet":false}`
+	data := `{"port":8888,"model_name":"x","model_api":"http://x:8000"}`
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}

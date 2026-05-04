@@ -69,5 +69,5 @@ func buildEnv(base []string, overrides map[string]string) []string {
 }
 
 func proxyURL(cfg *config.Config) string {
-	return fmt.Sprintf("http://localhost:%d", cfg.Port)
+	return fmt.Sprintf("http://127.0.0.1:%d", cfg.Port)
 }
