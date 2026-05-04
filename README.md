@@ -70,3 +70,17 @@ Check detour's stderr output — it logs which backend each request goes to:
 ```
 detour: proxy on :8888  [red → local | opus → anthropic]
 ```
+
+## Testing with the mock LLM
+
+`cmd/mockllm` is a dependency-free server that speaks the Anthropic Messages API and always replies with `"THIS IS DETOUR TEST!"`. It's the fastest way to verify routing without standing up real local inference.
+
+```bash
+# Terminal 1: start the mock on port 9999
+go run ./cmd/mockllm --port 9999
+
+# Terminal 2: point detour at the mock and launch Claude Code
+~/go/bin/detour --model-name detour-mock --model-api http://127.0.0.1:9999
+```
+
+Any prompt routed to the local backend will come back as `THIS IS DETOUR TEST!`, confirming the request reached the mock through the proxy. Prompts routed to Opus still hit the real Anthropic API as usual.

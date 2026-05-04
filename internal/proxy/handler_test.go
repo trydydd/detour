@@ -5,20 +5,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 )
-
-func init() {
-	// Set auth token for all tests
-	os.Setenv("ANTHROPIC_DETOUR_AUTH", testAuthToken)
-}
-
-func withAuth(req *http.Request) *http.Request {
-	req.Header.Set("X-Detour-Auth", testAuthToken)
-	return req
-}
 
 func testConfig(localUpstream, passthroughUpstream string) *Config {
 	return &Config{
@@ -60,8 +49,8 @@ func TestRouteLocal(t *testing.T) {
 	defer passthrough.Close()
 
 	mux := NewMux(testConfig(local.URL, passthrough.URL))
-	req := withAuth(httptest.NewRequest(http.MethodPost, "/v1/messages",
-		strings.NewReader(`{"model":"red","messages":[],"max_tokens":10}`)))
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"red","messages":[],"max_tokens":10}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -85,8 +74,8 @@ func TestRoutePassthrough(t *testing.T) {
 	defer local.Close()
 
 	mux := NewMux(testConfig(local.URL, passthrough.URL))
-	req := withAuth(httptest.NewRequest(http.MethodPost, "/v1/messages",
-		strings.NewReader(`{"model":"claude-opus-4-7","messages":[],"max_tokens":10}`)))
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"claude-opus-4-7","messages":[],"max_tokens":10}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -98,8 +87,8 @@ func TestRoutePassthrough(t *testing.T) {
 
 func TestMissingModel(t *testing.T) {
 	mux := NewMux(testConfig("http://unused", "http://unused"))
-	req := withAuth(httptest.NewRequest(http.MethodPost, "/v1/messages",
-		strings.NewReader(`{"messages":[]}`)))
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"messages":[]}`))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -111,8 +100,8 @@ func TestMissingModel(t *testing.T) {
 
 func TestInvalidJSON(t *testing.T) {
 	mux := NewMux(testConfig("http://unused", "http://unused"))
-	req := withAuth(httptest.NewRequest(http.MethodPost, "/v1/messages",
-		strings.NewReader(`not json`)))
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`not json`))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -163,8 +152,8 @@ func TestLocalStripsResponseThinking(t *testing.T) {
 	defer local.Close()
 
 	mux := NewMux(testConfig(local.URL, "http://unused"))
-	req := withAuth(httptest.NewRequest(http.MethodPost, "/v1/messages",
-		strings.NewReader(`{"model":"red","messages":[],"max_tokens":10}`)))
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"red","messages":[],"max_tokens":10}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -204,8 +193,8 @@ func TestLocalStripsStreamingThinking(t *testing.T) {
 	defer local.Close()
 
 	mux := NewMux(testConfig(local.URL, "http://unused"))
-	req := withAuth(httptest.NewRequest(http.MethodPost, "/v1/messages",
-		strings.NewReader(`{"model":"red","messages":[],"max_tokens":10,"stream":true}`)))
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"red","messages":[],"max_tokens":10,"stream":true}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -228,8 +217,8 @@ func TestLocalStripsThinking(t *testing.T) {
 	defer local.Close()
 
 	mux := NewMux(testConfig(local.URL, "http://unused"))
-	req := withAuth(httptest.NewRequest(http.MethodPost, "/v1/messages",
-		strings.NewReader(`{"model":"red","messages":[],"max_tokens":10,"thinking":{"type":"enabled","budget_tokens":5000}}`)))
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"red","messages":[],"max_tokens":10,"thinking":{"type":"enabled","budget_tokens":5000}}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -252,8 +241,8 @@ func TestLocalFiltersThinkingBeta(t *testing.T) {
 	defer local.Close()
 
 	mux := NewMux(testConfig(local.URL, "http://unused"))
-	req := withAuth(httptest.NewRequest(http.MethodPost, "/v1/messages",
-		strings.NewReader(`{"model":"red","messages":[],"max_tokens":10}`)))
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"red","messages":[],"max_tokens":10}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Anthropic-Beta", "interleaved-thinking-2025-05-14,prompt-caching-2024-07-31")
 	rec := httptest.NewRecorder()
@@ -278,8 +267,8 @@ func TestPassthroughPreservesThinking(t *testing.T) {
 	defer passthrough.Close()
 
 	mux := NewMux(testConfig("http://unused", passthrough.URL))
-	req := withAuth(httptest.NewRequest(http.MethodPost, "/v1/messages",
-		strings.NewReader(`{"model":"claude-opus-4-7","messages":[],"max_tokens":10,"thinking":{"type":"enabled","budget_tokens":5000}}`)))
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages",
+		strings.NewReader(`{"model":"claude-opus-4-7","messages":[],"max_tokens":10,"thinking":{"type":"enabled","budget_tokens":5000}}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Anthropic-Beta", "interleaved-thinking-2025-05-14")
 	rec := httptest.NewRecorder()
@@ -307,7 +296,7 @@ func TestModelsHandlerForwardsXApiKey(t *testing.T) {
 	defer anthropic.Close()
 
 	mux := NewMux(testConfig("http://unused", anthropic.URL))
-	req := withAuth(httptest.NewRequest(http.MethodGet, "/v1/models", nil))
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 	req.Header.Set("X-Api-Key", "test-key-123")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -322,7 +311,7 @@ func TestBodyTooLarge(t *testing.T) {
 	mux := NewMux(testConfig("http://unused", "http://unused"))
 	// 11 MiB body — one MiB over the 10 MiB limit
 	body := strings.NewReader(strings.Repeat("x", 11<<20))
-	req := withAuth(httptest.NewRequest(http.MethodPost, "/v1/messages", body))
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", body)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -342,7 +331,7 @@ func TestBodyUnderLimitProcessed(t *testing.T) {
 	// 5 MiB of padding in a valid JSON body — well under the 10 MiB limit
 	padding := strings.Repeat("x", 5<<20)
 	body := strings.NewReader(`{"model":"red","messages":[{"role":"user","content":"` + padding + `"}],"max_tokens":10}`)
-	req := withAuth(httptest.NewRequest(http.MethodPost, "/v1/messages", body))
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)

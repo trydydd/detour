@@ -12,11 +12,11 @@ import (
 
 // Launch starts the claude binary (or claudeBin override) as a subprocess
 // with detour's env vars injected. It blocks until the subprocess exits.
-func Launch(cfg *config.Config, claudeArgs []string, claudeBin string, authToken string) error {
+func Launch(cfg *config.Config, claudeArgs []string, claudeBin string) error {
 	if claudeBin == "" {
 		claudeBin = "claude"
 	}
-	env := buildEnv(os.Environ(), envOverrides(cfg, authToken))
+	env := buildEnv(os.Environ(), envOverrides(cfg))
 	cmd := exec.Command(claudeBin, claudeArgs...)
 	cmd.Env = env
 	cmd.Stdin = os.Stdin
@@ -26,8 +26,8 @@ func Launch(cfg *config.Config, claudeArgs []string, claudeBin string, authToken
 }
 
 // launchCapture is a test helper that captures subprocess output.
-func launchCapture(claudeBin string, cfg *config.Config, claudeArgs []string, authToken string) (string, error) {
-	env := buildEnv(os.Environ(), envOverrides(cfg, authToken))
+func launchCapture(claudeBin string, cfg *config.Config, claudeArgs []string) (string, error) {
+	env := buildEnv(os.Environ(), envOverrides(cfg))
 	cmd := exec.Command(claudeBin, claudeArgs...)
 	cmd.Env = env
 	var buf bytes.Buffer
@@ -37,11 +37,10 @@ func launchCapture(claudeBin string, cfg *config.Config, claudeArgs []string, au
 	return buf.String(), err
 }
 
-func envOverrides(cfg *config.Config, authToken string) map[string]string {
+func envOverrides(cfg *config.Config) map[string]string {
 	return map[string]string{
 		"ANTHROPIC_BASE_URL":            proxyURL(cfg),
 		"ANTHROPIC_CUSTOM_MODEL_OPTION": cfg.ModelName,
-		"ANTHROPIC_DETOUR_AUTH":         authToken,
 	}
 }
 

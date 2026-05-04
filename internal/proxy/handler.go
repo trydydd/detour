@@ -25,9 +25,9 @@ func NewMux(cfg *Config) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", handleHealth)
 	if cfg != nil {
-		mux.HandleFunc("/v1/messages", authMiddleware(makeMessagesHandler(cfg)))
-		mux.HandleFunc("/v1/models", authMiddleware(makeModelsHandler(cfg)))
-		mux.HandleFunc("/", authMiddleware(makePassthroughHandler(cfg)))
+		mux.HandleFunc("/v1/messages", makeMessagesHandler(cfg))
+		mux.HandleFunc("/v1/models", makeModelsHandler(cfg))
+		mux.HandleFunc("/", makePassthroughHandler(cfg))
 	}
 	return mux
 }
