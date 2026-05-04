@@ -1,0 +1,501 @@
+# Security Audit Remediation Work Ledger
+# Generated: 2026-05-02
+# Based on AUDIT.md security audit
+
+metadata:
+  audit_date: "2026-05-02"
+  scope: "Full source review of detour HTTP proxy"
+  methodology: "Manual code review, dependency analysis, threat modeling"
+  tdd_principle: "Write failing test first, then implement minimum code to pass, then refactor"
+
+tdd_guidance:
+  general_principles:
+    - "Red: Write a test that fails before any implementation"
+    - "Green: Write minimum code to make the test pass"
+    - "Refactor: Clean up while keeping tests green"
+    - "Tests should be fast, isolated, and deterministic"
+    - "Use table-driven tests for Go to cover multiple scenarios"
+  test_structure:
+    setup: "Create test fixtures and mocks in table-driven format"
+    exercise: "Invoke the function under test with various inputs"
+    verify: "Assert expected outputs, side effects, and error conditions"
+  status_workflow:
+    description: "Track work progress through the following states"
+    transitions:
+      - from: "pending"
+        to: "in_progress"
+        trigger: "When implementation work begins on the item"
+      - from: "in_progress"
+        to: "requires_validation"
+        trigger: "When implementation and tests are complete"
+        validation_checklist:
+          - "All acceptance criteria verified as met"
+          - "Tests written and passing (Red → Green → Refactor cycle complete)"
+          - "No linting or type errors"
+          - "Changes do not break existing functionality"
+      - from: "requires_validation"
+        to: "completed"
+        trigger: "After manual verification or code review confirms the fix"
+      - from: "requires_validation"
+        to: "in_progress"
+        trigger: "If validation reveals issues requiring additional work"
+    notes:
+      - "Move to 'requires_validation' only when the developer considers the work fully complete"
+      - "Validation should include both automated tests and manual verification of acceptance criteria"
+      - "If validation fails, return to 'in_progress' with notes on what needs fixing"
+
+items:
+  # CRITICAL FINDINGS
+  - id: C1
+    severity: CRITICAL
+    status: completed
+    title: "Proxy listens on all network interfaces, not just loopback"
+    location: "cmd/detour/main.go:57"
+    description: "Proxy binds to :8888 which resolves to 0.0.0.0, allowing any host on the same network to access it"
+    risk:
+      - "Burn through user's Anthropic API quota"
+      - "Issue arbitrary prompts and read responses"
+      - "Use proxy as exfiltration channel"
+    fix_guidance: |
+      Bind explicitly to loopback: addr := fmt.Sprintf("127.0.0.1:%d", cfg.Port)
+      If multi-host access needed, gate behind explicit --bind flag with default 127.0.0.1
+    acceptance_criteria:
+      - "Proxy binds to 127.0.0.1 by default, not 0.0.0.0"
+      - "Connection attempt from external host to proxy port is refused"
+      - "Connection from localhost succeeds"
+    fix_notes: |
+      --bind flag was purposefully skipped. The proxy is designed as a localhost-only tool for Claude Code,
+      and binding to 127.0.0.1 is the correct default with no legitimate use case for external access.
+      Adding a --bind flag would introduce unnecessary complexity and potential security risk.
+    tdd_steps:
+      1: "Write test that parses server config and asserts bind address is 127.0.0.1"
+      2: "Run test - expect FAIL (current code uses :PORT)"
+      3: "Modify main.go to use 127.0.0.1:$PORT"
+      4: "Run test - expect PASS"
+
+  - id: C2
+    severity: CRITICAL
+    status: completed
+    title: "No authentication on the proxy"
+    location: "internal/proxy/handler.go"
+    description: "Any process that can connect can send requests; no shared secret or caller verification"
+    risk:
+      - "Local user abuse on multi-user systems"
+      - "Combined with C1, enables remote credential abuse"
+    fix_guidance: |
+      Option 1 (recommended): Generate random per-launch secret token, set in Claude Code env, require on every request
+      Option 2: After C1 fix, use Unix socket with peer credentials check
+    solution_chosen: "Option 1: X-Detour-Auth header with ANTHROPIC_DETOUR_AUTH environment variable"
+    acceptance_criteria:
+      - "Proxy requires authentication header on all requests"
+      - "Request without valid auth token returns 401 Unauthorized"
+      - "Request with valid auth token proceeds normally"
+      - "Secret token passed via ANTHROPIC_DETOUR_AUTH environment variable"
+      - "Token validation happens before any upstream forwarding"
+    fix_notes: |
+      Implemented auth middleware that checks for X-Detour-Auth header. The expected token is read from
+      ANTHROPIC_DETOUR_AUTH environment variable. Health endpoint is exempted from auth. When the env
+      var is not set, auth is skipped (for development/testing). All existing tests updated to include
+      the auth header via withAuth() helper.
+    tdd_steps:
+      1: "Write test that sends request without auth header, expects 401"
+      2: "Run test - expect FAIL (no auth check exists)"
+      3: "Implement auth middleware that checks for X-Detour-Auth header"
+      4: "Run test - expect PASS"
+      5: "Write test that sends request with valid token, expects success"
+      6: "Run test - expect PASS"
+
+  # HIGH SEVERITY FINDINGS
+  - id: H1
+    severity: HIGH
+    status: pending
+    title: "No HTTP server timeouts → trivial slowloris / resource exhaustion"
+    location: "cmd/detour/main.go:58"
+    description: "http.Server lacks ReadTimeout, ReadHeaderTimeout, WriteTimeout, IdleTimeout"
+    risk:
+      - "Single client can hold connections indefinitely"
+      - "Send bytes one at a time to exhaust resources"
+      - "Open thousands of idle connections to exhaust file descriptors"
+    fix_guidance: |
+      srv := &http.Server{
+          Addr:              addr,
+          Handler:           mux,
+          ReadHeaderTimeout: 10 * time.Second,
+          ReadTimeout:       60 * time.Second,
+          WriteTimeout:      0, // SSE streams may run for minutes
+          IdleTimeout:       120 * time.Second,
+      }
+    acceptance_criteria:
+      - "ReadHeaderTimeout set to 10 seconds"
+      - "ReadTimeout set to 60 seconds"
+      - "IdleTimeout set to 120 seconds"
+      - "WriteTimeout remains 0 for SSE support"
+      - "Slowloris attack attempt fails within timeout period"
+    tdd_steps:
+      1: "Write test that inspects http.Server config for timeout values"
+      2: "Run test - expect FAIL (no timeouts configured)"
+      3: "Add timeout fields to server initialization"
+      4: "Run test - expect PASS"
+      5: "Add integration test simulating slow client, verify connection terminated"
+
+  - id: H2
+    severity: HIGH
+    status: completed
+    title: "Unbounded request body read"
+    location: "internal/proxy/handler.go:58"
+    description: "io.ReadAll reads entire request body into memory with no size cap"
+    risk:
+      - "Client can send 10GB body to OOM the proxy"
+      - "Memory exhaustion attack"
+    fix_guidance: |
+      const maxRequestBytes = 10 << 20 // 10 MiB
+      body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBytes+1))
+      if len(body) > maxRequestBytes {
+          writeError(w, http.StatusRequestEntityTooLarge, "invalid_request", "body too large")
+          return
+      }
+    acceptance_criteria:
+      - "Request body limited to 10 MiB maximum"
+      - "Request exceeding limit returns 413 Payload Too Large"
+      - "Error response does not expose internal details"
+      - "Valid requests under limit process normally"
+    tdd_steps:
+      1: "Write test sending 11 MiB body, expect 413 response"
+      2: "Run test - expect FAIL (no limit exists)"
+      3: "Implement io.LimitReader with maxRequestBytes constant"
+      4: "Run test - expect PASS"
+      5: "Write test sending 5 MiB body, expect normal processing"
+
+  - id: H3
+    severity: HIGH
+    status: completed
+    title: "Model API URL unvalidated, allowing scheme/path manipulation"
+    location: "internal/proxy/handler.go:79, cmd/detour/main.go:53"
+    description: "cfg.ModelAPI taken from CLI without URL parsing/validation"
+    risk:
+      - "Scheme injection (file://, ftp://)"
+      - "Path smuggling with trailing slash mismatches"
+      - "Config file integrity attacks"
+    fix_guidance: |
+      1. Parse URL with url.Parse, reject anything not http/https
+      2. Reject any path/query/fragment, store only canonicalized origin
+      3. Refuse to load config.json if group/world-writable
+      4. Write config.json with 0o600 permissions
+    acceptance_criteria:
+      - "Only http and https schemes accepted"
+      - "file://, ftp://, and other schemes rejected with clear error"
+      - "URLs with path/query/fragment components rejected"
+      - "Config file with insecure permissions (0644+) refused to load"
+      - "Config file written with 0600 permissions"
+    tdd_steps:
+      1: "Write URL validation function tests: valid http/https, invalid schemes, path injection"
+      2: "Run tests - expect FAIL"
+      3: "Implement url.Parse with scheme whitelist and origin-only storage"
+      4: "Run tests - expect PASS"
+      5: "Write config permission check tests"
+      6: "Run tests - expect FAIL"
+      7: "Implement os.Stat check and os.OpenFile with 0600"
+      8: "Run tests - expect PASS"
+
+  - id: H4
+    severity: HIGH
+    status: completed
+    title: "Plain-HTTP traffic to local inference server crosses network cleartext"
+    location: "cmd/detour/main.go:25, internal/forward/forward.go:96"
+    description: "http:// URLs to non-loopback hosts send sensitive data unencrypted"
+    risk:
+      - "Source code, secrets, internal docs sniffable on LAN"
+      - "No warning to user about cleartext transmission"
+    fix_guidance: |
+      When --model-api is http:// and host is not loopback:
+      - Print prominent warning at startup
+      - Document recommended pattern: TLS termination or SSH tunnel
+    acceptance_criteria:
+      - "Warning displayed when --model-api uses http:// with non-loopback host"
+      - "Warning mentions data will be unencrypted on network"
+      - "Warning suggests SSH tunnel or TLS termination as alternatives"
+      - "No warning for http://localhost or http://127.0.0.1"
+    tdd_steps:
+      1: "Write test that parses model-api URL and checks for warning on http+non-loopback"
+      2: "Run test - expect FAIL (no warning logic)"
+      3: "Implement URL parsing and warning output to stderr"
+      4: "Run test - expect PASS"
+      5: "Write test verifying no warning for localhost URLs"
+
+  # MEDIUM SEVERITY FINDINGS
+  - id: M1
+    severity: MEDIUM
+    status: pending
+    title: "Verbose upstream errors leak network/internal details to clients"
+    location: "internal/forward/forward.go:43,98"
+    description: "Returning raw Go network errors discloses internal IPs, DNS state, proxy config"
+    risk:
+      - "Information disclosure to potentially remote callers (if C1 unfixed)"
+      - "Network topology leakage"
+    fix_guidance: |
+      fmt.Fprintf(os.Stderr, "detour: upstream error: %v\n", err)
+      writeError(w, http.StatusBadGateway, "proxy_error", "upstream unavailable")
+    acceptance_criteria:
+      - "Detailed errors logged to stderr only"
+      - "Client receives generic 'upstream unavailable' message"
+      - "Internal IPs not present in client response"
+      - "DNS lookup errors not exposed to client"
+    tdd_steps:
+      1: "Write test that simulates upstream failure and checks response body"
+      2: "Run test - expect FAIL (verbose errors returned)"
+      3: "Implement stderr logging + generic error response"
+      4: "Run test - expect PASS"
+
+  - id: M2
+    severity: MEDIUM
+    status: pending
+    title: "Config file written with default umask"
+    location: "internal/config/config.go:44"
+    description: "os.Create uses 0o666 & ~umask, may end up world-readable (0644)"
+    risk:
+      - "Internal IP addresses leaked on shared hosts"
+      - "Config data unnecessarily exposed"
+    fix_guidance: "Replace os.Create with os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)"
+    acceptance_criteria:
+      - "Config file created with 0600 permissions"
+      - "Config directory created with 0700 permissions"
+      - "File permissions verifiable via os.Stat"
+    tdd_steps:
+      1: "Write test that creates config and asserts file mode is 0600"
+      2: "Run test - expect FAIL (uses default umask)"
+      3: "Replace os.Create with os.OpenFile using 0600"
+      4: "Run test - expect PASS"
+
+  - id: M3
+    severity: MEDIUM
+    status: pending
+    title: "No SSRF protection on the local upstream"
+    location: "internal/forward/forward.go:96"
+    description: "Once --model-api set, all requests go to that URL with no validation"
+    risk:
+      - "Attacker with config write access can redirect traffic"
+      - "Prompt content flows to attacker-controlled endpoint"
+    fix_guidance: |
+      Combine H3 URL validation with:
+      - Startup-time DNS resolution
+      - IP allowlist check (refuse public IPs unless --allow-public-upstream)
+    acceptance_criteria:
+      - "Upstream URL resolved to IP at startup"
+      - "Public IPs rejected by default"
+      - "Private IPs (10.x, 172.16-31.x, 192.168.x, 127.x) allowed"
+      - "--allow-public-upstream flag bypasses restriction when explicitly set"
+    tdd_steps:
+      1: "Write test that validates upstream resolves to private IP range"
+      2: "Run test - expect FAIL (no validation)"
+      3: "Implement DNS resolution and IP range check"
+      4: "Run test - expect PASS"
+      5: "Write test that public IP is rejected without --allow-public-upstream"
+
+  - id: M4
+    severity: MEDIUM
+    status: pending
+    title: "Claude binary resolved via $PATH with no integrity check"
+    location: "internal/launcher/launcher.go:17"
+    description: "exec.Command('claude', ...) searches $PATH, vulnerable to PATH injection"
+    risk:
+      - "Attacker can drop rogue claude binary in writable $PATH directory"
+      - "Full code execution under user when detour runs"
+    fix_guidance: |
+      - Resolve claude once via exec.LookPath
+      - Log resolved absolute path at startup
+      - Consider adding --claude-bin flag for explicit pinning
+    acceptance_criteria:
+      - "claude binary resolved via exec.LookPath at startup"
+      - "Resolved absolute path logged to stderr"
+      - "--claude-bin flag accepts explicit path override"
+      - "Explicit path takes precedence over $PATH lookup"
+    tdd_steps:
+      1: "Write test that verifies binary path is resolved and logged"
+      2: "Run test - expect FAIL"
+      3: "Implement exec.LookPath and log output"
+      4: "Run test - expect PASS"
+      5: "Write test for --claude-bin flag override"
+
+  - id: M5
+    severity: MEDIUM
+    status: pending
+    title: "Streaming copy ignores write errors and request cancellation"
+    location: "internal/forward/forward.go:64-79, 175-209"
+    description: "copyStreaming loops without checking r.Context().Done() or client write errors"
+    risk:
+      - "Disconnected client leaves proxy holding upstream stream"
+      - "Wasted Anthropic API tokens"
+      - "Orphaned goroutines"
+    fix_guidance: "Pass request context down, break loop on context cancellation or w.Write error"
+    acceptance_criteria:
+      - "Streaming loop checks r.Context().Done() on each iteration"
+      - "Streaming loop breaks on w.Write error"
+      - "Upstream connection closed when client disconnects"
+      - "No goroutine leaks after client disconnection"
+    tdd_steps:
+      1: "Write test that cancels request context mid-stream"
+      2: "Run test - expect FAIL (stream continues)"
+      3: "Add context.Done() check in streaming loop"
+      4: "Run test - expect PASS"
+      5: "Write test that simulates write error, verify loop terminates"
+
+  # LOW SEVERITY FINDINGS
+  - id: L1
+    severity: LOW
+    status: pending
+    title: "Health endpoint advertises proxy version"
+    location: "internal/proxy/handler.go:48-54"
+    description: "/health returns version 0.1.0, enabling version-targeted attacks"
+    risk: "Low - no public release history yet, but worth removing"
+    fix_guidance: "Drop version from health response, or gate behind authenticated debug endpoint"
+    acceptance_criteria:
+      - "/health response contains only status field"
+      - "Version field removed from health endpoint"
+      - "Version accessible via authenticated /debug/version if needed"
+    tdd_steps:
+      1: "Write test that calls /health and verifies no version field"
+      2: "Run test - expect FAIL (version present)"
+      3: "Remove version from health response struct"
+      4: "Run test - expect PASS"
+
+  - id: L2
+    severity: LOW
+    status: pending
+    title: "Authorization header forwarded but comment says only X-Api-Key"
+    location: "internal/forward/forward.go:12-18"
+    description: "allowedHeaders includes both X-Api-Key and Authorization, documentation unclear"
+    risk: "Minor footgun if client sets both with conflicting values"
+    fix_guidance: "Add comment explaining both are intentionally forwarded for Claude Code auth compatibility"
+    acceptance_criteria:
+      - "Comment added explaining dual auth header forwarding"
+      - "Both headers forwarded to Anthropic upstream"
+      - "Documented behavior matches implementation"
+    tdd_steps:
+      1: "Write test that sends both X-Api-Key and Authorization headers"
+      2: "Run test - expect PASS (both should forward)"
+      3: "Add code comment documenting intent"
+      4: "Verify documentation matches behavior"
+
+  - id: L3
+    severity: LOW
+    status: pending
+    title: "Anthropic-Beta filter is purely substring-based"
+    location: "internal/proxy/handler.go:116-125"
+    description: "filterThinkingBeta drops any beta token containing 'thinking' substring"
+    risk: "Future non-thinking 'thinking' beta features would be silently stripped"
+    fix_guidance: "Match against explicit allowlist/denylist of known thinking-related beta tokens"
+    acceptance_criteria:
+      - "Thinking beta tokens defined in explicit denylist constant"
+      - "Only listed tokens are filtered (not substring matches)"
+      - "New thinking tokens can be added to denylist as needed"
+    tdd_steps:
+      1: "Write test that lists known thinking beta tokens and verifies filtering"
+      2: "Run test - expect FAIL (uses substring matching)"
+      3: "Replace substring logic with explicit denylist lookup"
+      4: "Run test - expect PASS"
+      5: "Write test that non-thinking 'thinking' token (hypothetical) passes through"
+
+  - id: L4
+    severity: LOW
+    status: pending
+    title: "Subprocess inherits entire parent environment"
+    location: "internal/launcher/launcher.go:19,30"
+    description: "buildEnv starts from os.Environ() and only overrides specific keys"
+    risk: "Normal Unix behavior, not a vulnerability, but worth noting"
+    fix_guidance: "Optional: allowlist small set of variables (HOME, PATH, USER, LANG, TERM, ANTHROPIC_*)"
+    acceptance_criteria:
+      - "Document current behavior in threat model"
+      - "Optional: Implement environment allowlist"
+      - "Optional: Document --sanitize-env flag for strict mode"
+    tdd_steps:
+      1: "Write test that inspects subprocess environment variables"
+      2: "Run test - document current behavior"
+      3: "Optional: Implement allowlist and write corresponding tests"
+
+  - id: L5
+    severity: LOW
+    status: pending
+    title: "Body is buffered then re-wrapped with io.NopCloser"
+    location: "internal/proxy/handler.go:58, 89"
+    description: "Reading request fully into memory prevents slow upload streaming"
+    risk: "Combined with H2 unfixed, attacker can pin memory"
+    fix_guidance: "Already covered by H2 (cap the read)"
+    acceptance_criteria:
+      - "H2 fix (body size cap) is implemented"
+      - "No additional action required"
+    tdd_steps:
+      1: "Verify H2 tests pass"
+      2: "Document that L5 is covered by H2 remediation"
+
+  # POSITIVE FINDINGS (Document for reference)
+  - id: P1
+    severity: POSITIVE
+    status: pending
+    title: "Zero third-party Go dependencies"
+    description: "Supply-chain attack surface restricted to Go toolchain"
+    note: "Excellent - should be preserved. Every new dependency multiplies risk."
+
+  - id: P2
+    severity: POSITIVE
+    status: pending
+    title: "Anthropic upstream hardcoded to https://api.anthropic.com"
+    location: "cmd/detour/main.go:54"
+    description: "No flag to override, config-file attacker cannot redirect trusted upstream"
+    note: "Good design - maintain this guarantee"
+
+  - id: P3
+    severity: POSITIVE
+    status: pending
+    title: "Authorization header stripped before forwarding to local inference server"
+    description: "Local server never sees user's Anthropic credentials"
+    note: "Thoughtful defense - maintain this boundary"
+
+  - id: P4
+    severity: POSITIVE
+    status: pending
+    title: "Thinking blocks stripped from local responses"
+    description: "Prevents forged-signature blocks from poisoning subsequent passthrough requests"
+    note: "Thoughtful defense - maintain this sanitization"
+
+  - id: P5
+    severity: POSITIVE
+    status: pending
+    title: "Default Go TLS validation in effect for Anthropic calls"
+    description: "No InsecureSkipVerify, no custom Transport, no overridden CA pool"
+    note: "System trust store honored - maintain this security posture"
+
+  - id: P6
+    severity: POSITIVE
+    status: pending
+    title: "Request contexts propagated to outbound requests"
+    description: "http.NewRequestWithContext ensures client cancellation aborts upstream calls"
+    note: "Good practice - ensure M5 fix preserves this behavior"
+
+remediation_priority:
+  phase_1_critical:
+    - C1
+    - C2
+    note: "Without these fixes, the proxy is a remote-accessible credential bridge"
+
+  phase_2_high:
+    - H1
+    - H2
+    - H3
+    - H4
+    note: "Server hardening and input validation"
+
+  phase_3_medium:
+    - M1
+    - M2
+    - M3
+    - M4
+    - M5
+    note: "Error handling, SSRF protection, stream management"
+
+  phase_4_low:
+    - L1
+    - L2
+    - L3
+    - L4
+    - L5
+    note: "Documentation and minor improvements"

@@ -1,5 +1,9 @@
 # detour
 
+[![CI](https://github.com/trydydd/detour/actions/workflows/ci.yml/badge.svg)](https://github.com/trydydd/detour/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/trydydd/detour?sort=semver)](https://github.com/trydydd/detour/releases)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/trydydd/detour)](go.mod)
+
 A single Go binary that routes Claude Code's model requests between a local inference server and the real Anthropic API.
 
 ```
@@ -10,20 +14,20 @@ That's it. Detour starts a local proxy, injects the right env vars, and launches
 
 ## How it works
 
-Claude Code sends all API requests to detour instead of `api.anthropic.com`. Detour inspects the `model` field:
+Claude Code sends all API requests to detour instead of `api.anthropic.com`. Detour inspects the `model` field on each `/v1/messages` call:
 
-- **`model: "red"`** (or whatever alias you chose) → forwarded to your local inference server
-- **`model` contains `"opus"`** → forwarded unchanged to `api.anthropic.com`
+- **Model name matches your `--model-name` alias exactly** → forwarded to your local inference server
+- **Anything else** (including `claude-opus-*`, `claude-sonnet-*`, `claude-haiku-*`) → forwarded unchanged to `api.anthropic.com`
 
-This means `claude --model opusplan` works correctly: planning calls go to Opus on Anthropic, execution calls go to your local model.
+This means modes that switch models per-turn — like `claude --model opusplan` — work correctly: planning turns ask for Opus and pass through to Anthropic, execution turns ask for your alias and route to the local model.
 
 ## Requirements
 
-- Go 1.22+ (to build) or grab the binary from releases
+- Go 1.24+ (to build) or grab the binary from [releases](https://github.com/trydydd/detour/releases)
 - A local inference server that speaks the **Anthropic Messages API natively**:
   - **vLLM**: `vllm serve Qwen/Qwen2.5-Coder-7B-Instruct --served-model-name red --enable-auto-tool-choice --tool-call-parser hermes`
   - **llama.cpp server**: `llama-server --model model.gguf --alias red`
-- A real Anthropic API key (used for Opus passthrough)
+- A real Anthropic API key (used for passthrough turns)
 
 > The `--served-model-name` (vLLM) or `--alias` (llama.cpp) **must match** your `--model-name` flag.
 
@@ -45,14 +49,19 @@ Flags are saved to `~/.detour/config.json` on first run. Subsequent invocations 
 detour   # uses saved config
 ```
 
-### All flags
+### Flags
 
 | Flag | Default | Description |
 |---|---|---|
 | `--model-name` | — | Alias Claude Code uses as the model name (required) |
 | `--model-api` | — | Base URL of local inference server (required) |
-| `--port` | `8888` | Local proxy port |
-| `--no-haiku` | false | Don't override the haiku model tier |
+| `--port` | `8888` | Local proxy port (bound to `127.0.0.1`) |
+
+### Environment variables
+
+| Variable | Description |
+|---|---|
+| `DETOUR_LOG` | Set to `1`/`true`/`yes`/`on` to log one line per proxied request to stderr (`detour: <method> <path> <status> <duration>`). Off by default. |
 
 ### Proxy-only mode (no subprocess)
 
@@ -65,8 +74,24 @@ detour --model-name red --model-api http://192.168.0.28 -- --help
 
 ## Verify routing
 
-Check detour's stderr output — it logs which backend each request goes to:
+On startup, detour prints the bound address and which alias it routes locally:
 
 ```
-detour: proxy on :8888  [red → local | opus → anthropic]
+detour: proxy on 127.0.0.1:8888  [red → local | * → anthropic]
 ```
+
+For per-request visibility, run with `DETOUR_LOG=1`.
+
+## Testing with the mock LLM
+
+`cmd/mockllm` is a dependency-free server that speaks the Anthropic Messages API (streaming and non-streaming) and always replies with `"THIS IS DETOUR TEST!"`. It's the fastest way to verify routing without standing up real local inference.
+
+```bash
+# Terminal 1: start the mock on port 9999
+go run ./cmd/mockllm --port 9999
+
+# Terminal 2: point detour at the mock and launch Claude Code
+~/go/bin/detour --model-name detour-mock --model-api http://127.0.0.1:9999
+```
+
+Any prompt routed to the local backend will come back as `THIS IS DETOUR TEST!`, confirming the request reached the mock through the proxy. Prompts routed to Anthropic models still hit the real API as usual.

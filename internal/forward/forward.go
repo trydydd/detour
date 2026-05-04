@@ -171,7 +171,10 @@ func stripThinkingFromResponseBody(body []byte) []byte {
 }
 
 // copyStreamingStripThinking copies an SSE body to w, dropping events that
-// belong to thinking content blocks.
+// belong to thinking content blocks. message_start events are also patched to
+// add type:"message" and role:"assistant" when the upstream omits them — some
+// servers (e.g. vLLM) leave these off, which breaks downstream consumers that
+// require them (notably Claude Code's mobile transcript relay).
 func copyStreamingStripThinking(w http.ResponseWriter, body io.Reader) {
 	flusher, canFlush := w.(http.Flusher)
 	thinkingIdx := make(map[int]bool)
@@ -184,7 +187,7 @@ func copyStreamingStripThinking(w http.ResponseWriter, body io.Reader) {
 		line := scanner.Text()
 		if line == "" {
 			if !shouldDropSSEEvent(event, thinkingIdx) {
-				for _, l := range event {
+				for _, l := range patchEventLines(event) {
 					io.WriteString(w, l+"\n")
 				}
 				io.WriteString(w, "\n")
@@ -199,13 +202,80 @@ func copyStreamingStripThinking(w http.ResponseWriter, body io.Reader) {
 	}
 	// Flush any trailing lines (malformed stream without final blank line).
 	if len(event) > 0 {
-		for _, l := range event {
+		for _, l := range patchEventLines(event) {
 			io.WriteString(w, l+"\n")
 		}
 		if canFlush {
 			flusher.Flush()
 		}
 	}
+}
+
+// patchEventLines rewrites the data: payload of message_start events to inject
+// Anthropic-required fields when missing. All other lines pass through.
+func patchEventLines(lines []string) []string {
+	for i, l := range lines {
+		const prefix = "data:"
+		if !strings.HasPrefix(l, prefix) {
+			continue
+		}
+		data := strings.TrimSpace(l[len(prefix):])
+		patched, ok := patchMessageStart([]byte(data))
+		if !ok {
+			continue
+		}
+		lines[i] = "data: " + string(patched)
+	}
+	return lines
+}
+
+// patchMessageStart adds type:"message" and role:"assistant" to the inner
+// message object of a message_start event when missing. Returns the original
+// bytes and false when the data is not a message_start event or both fields
+// are already present.
+func patchMessageStart(data []byte) ([]byte, bool) {
+	var ev map[string]json.RawMessage
+	if err := json.Unmarshal(data, &ev); err != nil {
+		return data, false
+	}
+	typRaw, ok := ev["type"]
+	if !ok {
+		return data, false
+	}
+	var typ string
+	if err := json.Unmarshal(typRaw, &typ); err != nil || typ != "message_start" {
+		return data, false
+	}
+	msgRaw, ok := ev["message"]
+	if !ok {
+		return data, false
+	}
+	var msg map[string]json.RawMessage
+	if err := json.Unmarshal(msgRaw, &msg); err != nil {
+		return data, false
+	}
+	changed := false
+	if _, ok := msg["type"]; !ok {
+		msg["type"] = json.RawMessage(`"message"`)
+		changed = true
+	}
+	if _, ok := msg["role"]; !ok {
+		msg["role"] = json.RawMessage(`"assistant"`)
+		changed = true
+	}
+	if !changed {
+		return data, false
+	}
+	newMsg, err := json.Marshal(msg)
+	if err != nil {
+		return data, false
+	}
+	ev["message"] = json.RawMessage(newMsg)
+	out, err := json.Marshal(ev)
+	if err != nil {
+		return data, false
+	}
+	return out, true
 }
 
 // shouldDropSSEEvent returns true for content_block_* events belonging to a

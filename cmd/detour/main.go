@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"flag"
 	"fmt"
 	"net"
@@ -53,10 +51,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "detour: warning: could not save config: %v\n", err)
 	}
 
-	// --- Generate per-launch auth token and make it available to the proxy ---
-	authToken := generateAuthToken()
-	os.Setenv("ANTHROPIC_DETOUR_AUTH", authToken)
-
 	// --- Start proxy ---
 	proxyCfg := &proxy.Config{
 		ModelName:            cfg.ModelName,
@@ -82,7 +76,7 @@ func main() {
 	fmt.Fprintf(os.Stderr, "detour: proxy on %s  [%s → local | * → anthropic]\n", addr, cfg.ModelName)
 
 	// --- Launch claude (or just serve if no claude found) ---
-	launchErr := launcher.Launch(cfg, claudeArgs, "", authToken)
+	launchErr := launcher.Launch(cfg, claudeArgs, "")
 	if launchErr != nil {
 		fmt.Fprintln(os.Stderr, "detour:", launchErr)
 	}
@@ -126,12 +120,4 @@ func fatalf(format string, args ...any) {
 
 func buildListenAddr(port int) string {
 	return "127.0.0.1:" + fmt.Sprint(port)
-}
-
-func generateAuthToken() string {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		fatalf("generate auth token: %v", err)
-	}
-	return hex.EncodeToString(b)
 }
