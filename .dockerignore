@@ -1,0 +1,35 @@
+# Build artifacts
+bin/
+dist/
+
+# Version control
+.git/
+.gitignore
+
+# CI/CD configuration
+.github/
+
+# Local development configuration
+claude.env
+.env
+.env.local
+.env.*.local
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Documentation (optional - uncomment if not needed in image)
+# docs/
+# *.md
+
+# Test files (optional - uncomment if not needed in image)
+# *_test.go
+# test_*.go
+# tests/
+
+# Docker files (we're building from root, not needed in context)
+# Dockerfile
+# .dockerignore

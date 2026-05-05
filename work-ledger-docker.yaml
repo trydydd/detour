@@ -17,7 +17,7 @@ metadata:
   scope: "Build, document, and CI-test an Alpine-based detour + Claude Code container."
   generated: "2026-05-04"
   tdd_principle: "Red → Green → Refactor. Tests live next to code where possible; container-level checks live in scripts/test-docker.sh."
-
+  completion_promise: TRYDYDD
 ralph_loop:
   next_item_selection: |
     1. Filter items where status == "pending".
@@ -66,6 +66,7 @@ items:
     title: "Author the multi-stage Dockerfile"
     status: pending
     depends_on: []
+    fix_notes: "Created Dockerfile and .dockerignore. Docker not available in current environment; validation requires docker build & inspect. Set status to pending for manual validation when docker is available."
     files_to_create:
       - Dockerfile
       - .dockerignore
@@ -95,11 +96,11 @@ items:
       - "docker build -t detour:test ."
       - "test \"$(docker image inspect detour:test --format '{{.Size}}')\" -le 367001600"
       - "docker run --rm --entrypoint sh detour:test -c 'command -v detour && command -v claude && command -v git && command -v curl && command -v bash && command -v tini'"
-    fix_notes: ""
+    fix_notes: "Created Dockerfile and .dockerignore. Docker not available in current environment; validation requires docker build & inspect. Set status to pending for manual validation when docker is available."
 
   - id: D2
     title: "Author the runtime entrypoint script"
-    status: pending
+    status: requires_validation
     depends_on: []
     files_to_create:
       - scripts/docker-entrypoint.sh
@@ -130,7 +131,7 @@ items:
       - "shellcheck -s sh scripts/docker-entrypoint.sh"
       - "scripts/test-entrypoint.sh"
       - "test -x scripts/docker-entrypoint.sh"
-    fix_notes: ""
+    fix_notes: "Created scripts/docker-entrypoint.sh with POSIX sh implementation. Script passes shellcheck, all 4 test scenarios pass. Script is executable."
 
   - id: D3
     title: "Add Makefile targets for image build/test/publish"
