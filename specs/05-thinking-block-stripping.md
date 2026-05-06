@@ -111,4 +111,4 @@ Remove thinking tokens from `Anthropic-Beta` header:
 
 1. Thinking blocks stripped because local inference servers cannot produce valid Anthropic signatures; blocks with invalid signatures cause subsequent passthrough requests to fail with 400 invalid-signature error
 2. Streaming filter tracks thinking block indices to correctly drop all events belonging to thinking blocks (start, delta, stop)
-3. Message start event patching is handled separately by spec 11 (message-start-patching)
+3. Message start event patching is handled separately (message-start-patching spec)

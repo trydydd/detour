@@ -126,4 +126,3 @@ Forward any unrecognized path to Anthropic API with original URI preserved.
 2. Beta header filtering removes thinking-related tokens to prevent compatibility issues
 3. Catch-all handler ensures any unrecognized paths still reach Anthropic
 4. Request logging wraps all handlers (except `/health`) when `DETOUR_LOG` is enabled, capturing method, path, status, and duration
-5. `loggingWriter` wrapper captures HTTP status code by intercepting `WriteHeader` calls, defaulting to 200 if not explicitly set

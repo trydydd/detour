@@ -94,7 +94,7 @@ For streaming responses to local inference servers:
 4. Forward all other events unchanged
 5. Flush after each forwarded event
 
-**Note:** Message start event patching is handled separately by spec 11 (message-start-patching).
+**Note:** Message start event patching is handled separately (message-start-patching spec).
 
 ### Error Responses
 
@@ -117,4 +117,4 @@ For streaming responses to local inference servers:
 3. Streaming responses processed chunk-by-chunk with immediate flush to maintain real-time behavior
 4. All upstream status codes forwarded unchanged (including 4xx errors)
 5. Thinking block tracking uses index-based approach to correctly filter all events (start, delta, stop) belonging to thinking blocks
-6. Message start event patching is handled separately by spec 11 (message-start-patching)
+6. Message start event patching is handled separately (message-start-patching spec)
