@@ -4,6 +4,10 @@
 
 Filter the `Anthropic-Beta` header by removing thinking-related tokens while preserving other beta flags when forwarding to local inference servers.
 
+**Related specs:**
+- Spec 14 (Header Filtering and Forwarding) - covers which headers are forwarded to each backend
+- Spec 05 (Thinking Block Stripping) - covers thinking removal from request/response bodies
+
 ## Scope
 
 **In-scope:**
