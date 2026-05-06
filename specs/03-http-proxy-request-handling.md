@@ -69,13 +69,14 @@ Returns JSON with status and version:
 
 ### Messages Handler Sequence
 
-1. Read request body with size limit enforcement
+1. Read request body with size limit enforcement (10 MiB max)
 2. Parse JSON and extract `model` field
-3. Validate `model` field is present and non-empty
-4. Call routing function with model name and local alias
-5. Apply transformations based on routing decision
-6. Forward request to appropriate upstream
-7. Return upstream response to client
+3. If JSON parse fails, return 400 error with parse error details
+4. Validate `model` field is present and non-empty; if missing, return 400 "missing required field: model"
+5. Call routing function with model name and local alias
+6. Apply transformations based on routing decision
+7. Forward request to appropriate upstream
+8. Return upstream response to client
 
 ### Request Validation Errors
 
@@ -83,7 +84,7 @@ Returns JSON with status and version:
 |-----------|-------------|------------|---------|
 | Body read failure | 400 | invalid_request | "could not read request body" |
 | Body exceeds limit | 413 | invalid_request | "request body too large" |
-| Invalid JSON | 400 | invalid_request | JSON parse error details |
+| Invalid JSON | 400 | invalid_request | JSON parse error details (from underlying parser) |
 | Missing model field | 400 | invalid_request | "missing required field: model" |
 
 ### Local Route Transformations

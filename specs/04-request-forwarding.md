@@ -81,6 +81,12 @@ For responses with `Content-Type: text/event-stream`:
 3. Flush after each write to ensure immediate delivery
 4. Continue until read returns error (end of stream)
 
+### Streaming Strip-Thinking Buffer
+
+The SSE scanner uses a 64 KiB buffer for reading streaming responses:
+- Initial buffer size: 4096 bytes
+- Maximum scanner buffer: 64 KiB (65536 bytes)
+
 ### Streaming Strip-Thinking Behavior (DoLocal only)
 
 For streaming responses to local inference servers:

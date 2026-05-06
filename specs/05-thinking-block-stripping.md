@@ -76,7 +76,7 @@ Remove thinking blocks from JSON response:
 Filter thinking events from SSE stream:
 
 1. Initialize empty thinking block index tracker
-2. Parse stream line by line, grouping into events (blank line separates events)
+2. Parse stream using buffered scanner (64 KiB max buffer), grouping into events (blank line separates events)
 3. For each complete event:
    - If event type is `content_block_start` with `content_block.type == "thinking"`:
      - Record the block index as thinking
@@ -87,6 +87,8 @@ Filter thinking events from SSE stream:
      - If no, forward event
    - For all other event types: forward unchanged
 4. Flush after each forwarded event
+
+**Trailing event handling:** If the stream ends without a final blank line (malformed), any pending event is processed and forwarded without requiring a blank line terminator.
 
 ### Beta Header Filtering
 
