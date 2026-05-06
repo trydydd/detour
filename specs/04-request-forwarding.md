@@ -92,10 +92,9 @@ For streaming responses to local inference servers:
    - `content_block_delta` for tracked thinking indices
    - `content_block_stop` for tracked thinking indices
 4. Forward all other events unchanged
-5. Patch `message_start` events to inject missing fields:
-   - If inner `message.type` missing, add `"type": "message"`
-   - If inner `message.role` missing, add `"role": "assistant"`
-6. Flush after each forwarded event
+5. Flush after each forwarded event
+
+**Note:** Message start event patching is handled separately by spec 11 (message-start-patching).
 
 ### Error Responses
 
@@ -117,5 +116,5 @@ For streaming responses to local inference servers:
 2. Content-Length and Transfer-Encoding headers skipped for local forwarding because body size may change after thinking block removal
 3. Streaming responses processed chunk-by-chunk with immediate flush to maintain real-time behavior
 4. All upstream status codes forwarded unchanged (including 4xx errors)
-5. `message_start` events patched to add `type:"message"` and `role:"assistant"` when upstream (e.g., vLLM) omits these required fields
-6. Thinking block tracking uses index-based approach to correctly filter all events (start, delta, stop) belonging to thinking blocks
+5. Thinking block tracking uses index-based approach to correctly filter all events (start, delta, stop) belonging to thinking blocks
+6. Message start event patching is handled separately by spec 11 (message-start-patching)

@@ -71,10 +71,12 @@ If validation fails:
 
 ### Proxy Startup Verification
 
-1. Attempt to connect to proxy address at 100ms intervals
-2. Continue for up to 3 seconds
-3. On success: proceed to launch claude
-4. On timeout: print error to stderr and exit with status 1
+1. Attempt to connect to proxy address using TCP dial with 100ms timeout
+2. If connection succeeds, close the test connection and proceed
+3. If connection fails, wait 50ms and retry
+4. Continue retrying for up to 3 seconds total
+5. On success: proceed to launch claude
+6. On timeout: print error to stderr and exit with status 1
 
 ### Signal Handling
 

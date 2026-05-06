@@ -98,18 +98,6 @@ Remove thinking tokens from `Anthropic-Beta` header:
 4. Join remaining tokens with comma
 5. Return filtered header value
 
-### Message Start Event Patching
-
-For streaming responses from local servers, inject missing fields:
-
-1. Parse each SSE event data as JSON
-2. If event type is `message_start`:
-   - Extract inner `message` object
-   - If `message.type` missing, add `"type": "message"`
-   - If `message.role` missing, add `"role": "assistant"`
-   - Re-serialize and replace original event data
-3. All other events pass through unchanged
-
 ## State Transitions
 
 | Input | Transformation | Output |
@@ -118,11 +106,9 @@ For streaming responses from local servers, inject missing fields:
 | Response with thinking blocks | Filter array | Response without thinking blocks |
 | SSE stream with thinking events | Drop events | Stream without thinking events |
 | Beta header with thinking token | Remove token | Filtered header |
-| message_start missing type/role | Inject fields | Patched event |
 
 ## Notable Behaviors
 
 1. Thinking blocks stripped because local inference servers cannot produce valid Anthropic signatures; blocks with invalid signatures cause subsequent passthrough requests to fail with 400 invalid-signature error
-2. Message start patching compensates for some local servers (e.g., vLLM) that omit `type` and `role` fields required by downstream consumers
-3. Streaming filter tracks thinking block indices to correctly drop all events belonging to thinking blocks (start, delta, stop)
-4. Patching only modifies message_start events; all other event types pass through byte-for-byte
+2. Streaming filter tracks thinking block indices to correctly drop all events belonging to thinking blocks (start, delta, stop)
+3. Message start event patching is handled separately by spec 11 (message-start-patching)
