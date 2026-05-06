@@ -56,6 +56,8 @@ Proxy registers handlers in order:
 3. `/v1/models` - models list passthrough
 4. `/` - catch-all passthrough
 
+All handlers (except `/health`) are wrapped with optional request logging via `maybeLog`.
+
 ### Health Check Handler
 
 Returns JSON with status and version:
@@ -123,3 +125,5 @@ Forward any unrecognized path to Anthropic API with original URI preserved.
 1. Thinking field removal prevents local servers from generating blocks with invalid signatures that would break subsequent passthrough requests
 2. Beta header filtering removes thinking-related tokens to prevent compatibility issues
 3. Catch-all handler ensures any unrecognized paths still reach Anthropic
+4. Request logging wraps all handlers (except `/health`) when `DETOUR_LOG` is enabled, capturing method, path, status, and duration
+5. `loggingWriter` wrapper captures HTTP status code by intercepting `WriteHeader` calls, defaulting to 200 if not explicitly set

@@ -81,6 +81,22 @@ For responses with `Content-Type: text/event-stream`:
 3. Flush after each write to ensure immediate delivery
 4. Continue until read returns error (end of stream)
 
+### Streaming Strip-Thinking Behavior (DoLocal only)
+
+For streaming responses to local inference servers:
+
+1. Parse SSE events line by line (blank line separates events)
+2. Track thinking block indices when `content_block_start` with `content_block.type == "thinking"` is seen
+3. Drop all events belonging to thinking blocks:
+   - `content_block_start` for thinking blocks
+   - `content_block_delta` for tracked thinking indices
+   - `content_block_stop` for tracked thinking indices
+4. Forward all other events unchanged
+5. Patch `message_start` events to inject missing fields:
+   - If inner `message.type` missing, add `"type": "message"`
+   - If inner `message.role` missing, add `"role": "assistant"`
+6. Flush after each forwarded event
+
 ### Error Responses
 
 | Condition | HTTP Status | Error Type | Message Pattern |
@@ -101,3 +117,5 @@ For responses with `Content-Type: text/event-stream`:
 2. Content-Length and Transfer-Encoding headers skipped for local forwarding because body size may change after thinking block removal
 3. Streaming responses processed chunk-by-chunk with immediate flush to maintain real-time behavior
 4. All upstream status codes forwarded unchanged (including 4xx errors)
+5. `message_start` events patched to add `type:"message"` and `role:"assistant"` when upstream (e.g., vLLM) omits these required fields
+6. Thinking block tracking uses index-based approach to correctly filter all events (start, delta, stop) belonging to thinking blocks
