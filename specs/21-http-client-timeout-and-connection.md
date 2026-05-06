@@ -22,9 +22,9 @@ This spec defines the HTTP client behavior for upstream connections including ti
 
 | Setting | Value | Description |
 |---------|-------|-------------|
-| Client Instance | `http.DefaultClient` | Go's global default HTTP client |
-| Transport | Default | `http.DefaultTransport` |
-| Timeout | None configured | No explicit timeout set |
+| Client Instance | `http.DefaultClient` | Go's global default HTTP client (no custom client created) |
+| Transport | `http.DefaultTransport` | Inherited from default client |
+| Timeout | None configured | No explicit timeout set on request or client |
 | Idle Timeout | 90 seconds | From `http.DefaultTransport.IdleConnTimeout` |
 | Max Idle Conns | 100 | From `http.DefaultTransport.MaxIdleConns` |
 | Max Idle Conns Per Host | 90 | From `http.DefaultTransport.MaxIdleConnsPerHost` |

@@ -64,9 +64,10 @@ If graceful shutdown exceeds 3-second timeout:
 
 During shutdown:
 1. Claude subprocess may still be running
-2. Parent process waits for subprocess to complete
+2. Parent process waits for subprocess to complete before exiting
 3. If subprocess fails to launch, parent exits with error code 1
 4. Exit code from subprocess is propagated to parent
+5. Note: `srv.Shutdown()` is called but the returned context is not actively monitored for shutdown completion
 
 ## State Transitions
 

@@ -74,20 +74,22 @@ If validation fails:
 1. Attempt to connect to proxy address using TCP dial with 100ms timeout
 2. If connection succeeds, close the test connection and proceed
 3. If connection fails, wait 50ms and retry
-4. Continue retrying for up to 3 seconds total
+4. Continue retrying for up to 3 seconds total deadline
 5. On success: proceed to launch claude
 6. On timeout: print error to stderr and exit with status 1
 
 ### Signal Handling
 
 Registered signal handlers:
-- `SIGINT` (Ctrl+C): Trigger graceful shutdown
+- `SIGINT` (Ctrl+C): Trigger graceful shutdown via `signal.NotifyContext`
 
 Shutdown sequence:
-1. Stop accepting new connections
+1. Stop accepting new connections via `srv.Shutdown()`
 2. Wait up to 3 seconds for active requests to complete
 3. Force close remaining connections after timeout
 4. Exit application
+
+Note: The signal context returned by `signal.NotifyContext` is created but not actively monitored; shutdown relies on the `srv.Shutdown()` call rather than context cancellation.
 
 ### Subprocess Launch
 

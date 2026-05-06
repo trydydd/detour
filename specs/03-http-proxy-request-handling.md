@@ -54,7 +54,7 @@ Proxy registers handlers in order:
 1. `/health` - health check
 2. `/v1/messages` - Messages API with routing logic
 3. `/v1/models` - models list passthrough
-4. `/` - catch-all passthrough
+4. `/` - catch-all passthrough for any unrecognized paths
 
 All handlers (except `/health`) are wrapped with optional request logging via `maybeLog`.
 

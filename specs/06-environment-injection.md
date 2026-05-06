@@ -63,6 +63,7 @@ If no binary path specified, use `"claude"` as default.
 
 - Subprocess exit code 0: return nil error
 - Subprocess non-zero exit: return error wrapping subprocess failure
+- Note: The `Launch()` function returns an error but does not directly propagate the exit code; the caller (main) handles the error and exits with status 1 if launch fails
 
 ## State Transitions
 
