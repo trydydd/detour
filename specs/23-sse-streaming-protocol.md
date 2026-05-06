@@ -44,6 +44,7 @@ data: <json_payload>
 | `content_block_stop` | Upstream→Client | End of content block |
 | `message_delta` | Upstream→Client | Message-level updates |
 | `message_stop` | Upstream→Client | End of message |
+| `[DONE]` | Upstream→Client | Stream termination indicator (OpenAI compatibility) |
 
 ### Event Payload Structures
 
@@ -186,6 +187,7 @@ For local upstream routes, `message_start` events may be patched:
 | message_start | N/A | N/A | Pass (possibly patch) |
 | message_delta | N/A | N/A | Pass |
 | message_stop | N/A | N/A | Pass |
+| [DONE] | N/A | N/A | Pass (exempt from thinking filtering) |
 
 ## Notable Behaviors
 
@@ -200,6 +202,8 @@ For local upstream routes, `message_start` events may be patched:
 5. **Malformed Stream Handling**: If the stream ends without a blank line after the last event, the remaining event is still processed.
 
 6. **No Event Reordering**: Events are processed and forwarded in the exact order received from upstream.
+
+7. **[DONE] token handling**: The `[DONE]` token is always forwarded regardless of thinking block state. It is explicitly exempt from thinking block filtering to maintain compatibility with clients that expect this stream termination signal.
 
 ## Rationale
 

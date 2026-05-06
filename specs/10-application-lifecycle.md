@@ -26,7 +26,7 @@ Manage the complete lifecycle of the detour proxy application from startup throu
 |------|------|----------|---------|-------------|
 | `--model-name` | string | Yes | — | Model alias sent to Claude Code |
 | `--model-api` | string | Yes | — | Base URL of local inference server |
-| `--port` | integer | No | 0 (dynamic) | Proxy listen port |
+| `--port` | integer | No | 0 (defaults to 8888) | Proxy listen port |
 | Positional args | string array | No | — | Arguments passed to claude subprocess |
 
 ### Configuration Sources (in priority order)
@@ -53,7 +53,9 @@ Manage the complete lifecycle of the detour proxy application from startup throu
 12. Launch claude subprocess with modified environment
 13. Wait for subprocess completion
 14. Gracefully shutdown proxy
-15. Exit with subprocess exit status
+15. Exit with status code 1 if launch failed, otherwise exit with status 0
+
+**Note:** The actual subprocess exit code is not propagated to the parent process exit status. If the subprocess exits with any non-zero code, detour exits with status 1.
 
 ### Configuration Merge Rules
 
@@ -100,7 +102,7 @@ Note: The signal context returned by `signal.NotifyContext` is created but not a
 3. Attach stdin, stdout, stderr to parent process
 4. Execute command
 5. Block until subprocess exits
-6. Return subprocess exit status
+6. Return error if subprocess exited non-zero or failed to launch. The error contains exit status information but the numeric exit code is not directly exposed to caller.
 
 ### Error Reporting
 
@@ -128,10 +130,12 @@ All errors printed to stderr with "detour:" prefix:
 1. **Proxy starts before claude**: Proxy must be ready before launching claude to ensure no requests are lost
 2. **Graceful shutdown on SIGINT**: Allows active requests to complete before exiting
 3. **3-second shutdown timeout**: Forces termination if graceful shutdown takes too long
-4. **Subprocess exit code propagated**: detour exits with same code as claude subprocess
+4. **Subprocess exit code handling**: detour exits with status 1 if subprocess fails, status 0 if successful. The actual subprocess exit code is wrapped in an error but not directly propagated as the parent's exit code.
 5. **Warning for cleartext HTTP**: Alerts user when using http:// with non-loopback addresses
 6. **Config auto-save**: Updated configuration saved after each run for convenience
-7. **Positional args forwarded**: Any arguments after `--` passed directly to claude subprocess
+7. **Positional args forwarded**: All remaining arguments after `flag.Parse()` are passed to claude subprocess. The `--` separator is mentioned in usage hints but not enforced by the argument parser.
+
+8. **Config save failure handling**: If saving the updated configuration fails, a warning is printed to stderr but the application continues running. This is non-fatal.
 
 ## Version Information
 

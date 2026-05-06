@@ -91,3 +91,4 @@ All error responses use JSON format:
 2. Error type provides machine-readable classification
 3. Message provides human-readable context
 4. Upstream status codes (4xx, 5xx) forwarded unchanged to client
+5. **Code duplication**: The `writeError` function is defined identically in both `internal/proxy/errors.go` and `internal/forward/forward.go`. This duplication is not addressed in the codebase.

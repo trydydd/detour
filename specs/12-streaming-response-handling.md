@@ -124,7 +124,7 @@ When detected:
 | `content_block_stop` | Index not in thinking tracker | Forward |
 | `message_delta` | Never | Forward |
 | `message_stop` | Never | Forward |
-| `[DONE]` | Never | Forward |
+| `[DONE]` | Never | Forward (exempt from thinking filtering) |
 
 ### Trailing Event Handling
 
@@ -159,6 +159,8 @@ If the stream ends without a final blank line (malformed SSE):
 5. **Patching independence**: Message start event patching operates independently from thinking block filtering; both can apply to same stream
 
 6. **Minimal memory footprint**: Only current event accumulated in memory; previous events discarded after processing
+
+7. **[DONE] token handling**: The `[DONE]` token is explicitly exempt from thinking block filtering. It is always forwarded regardless of whether a thinking block is active.
 
 ## Error Handling
 

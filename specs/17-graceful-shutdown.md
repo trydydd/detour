@@ -98,6 +98,8 @@ During shutdown:
 
 5. **No cleanup of partial state**: If shutdown is interrupted or force-closed, no explicit cleanup of partial state is performed
 
+6. **Shutdown error ignored**: The `srv.Shutdown()` return value (error) is discarded. Any shutdown errors are not logged or reported.
+
 ## Rationale
 
 Graceful shutdown serves several purposes:
