@@ -1,0 +1,370 @@
+ledger_version: 1
+feature: system_prompt_injection
+status: planned
+created_for: detour
+context_window_guidance:
+  max_context_window_tokens: 50000
+  rule: "Each task is scoped so an agent can load only the listed files plus recent test output and remain under roughly 50k tokens."
+  avoid_loading:
+    - "Whole repository unless needed for final verification."
+    - "Large generated artifacts or dependency caches."
+    - "Prompt file contents in logs or PR text."
+product_goal: >-
+  Add optional runtime system prompt injection controlled by --system-prompt-file. When configured, Detour reads a UTF-8 text file once at startup and injects its content into Anthropic Messages API request bodies handled by /v1/messages.
+non_goals:
+  - "Do not implement remote URL prompt loading."
+  - "Do not read the prompt file on every request."
+  - "Do not persist prompt contents."
+  - "Do not inject prompts into /health, /v1/models, or generic passthrough routes."
+default_decisions:
+  applies_to_routes:
+    local_messages: true
+    passthrough_messages: true
+    models_endpoint: false
+    health_endpoint: false
+    generic_passthrough: false
+  merge_policy:
+    missing_system: "Set system to an array containing one text block with injected prompt."
+    string_system: "Convert to array with injected prompt text block first, then original string as a text block."
+    array_system: "Prepend injected prompt text block to existing array."
+    invalid_system_type: "Return HTTP 400 invalid_request and do not forward upstream."
+  injected_block:
+    type: text
+    text_source: "Exact loaded prompt file contents after optional leading UTF-8 BOM removal."
+  prompt_file_validation:
+    max_bytes: 262144
+    encoding: utf-8
+    reject_empty_after_bom_removal: true
+    reject_directories: true
+    reject_non_regular_files: true
+  persistence:
+    prompt_path_may_be_persisted: true
+    prompt_contents_must_not_be_persisted: true
+  logging:
+    may_log_path_on_error: true
+    must_not_log_prompt_contents: true
+tasks:
+  - id: SPI-001
+    title: "Define configuration model and persistence behavior"
+    status: pending
+    objective: >-
+      Add a configuration field for the optional prompt file path and an in-memory representation for loaded prompt contents, while ensuring prompt contents never serialize to config.json.
+    context_budget:
+      target_tokens: 50000
+      files_to_load:
+        - internal/config/config.go
+        - internal/config/config_test.go
+      commands_to_run:
+        - go test ./internal/config
+    files_to_modify:
+      - internal/config/config.go
+      - internal/config/config_test.go
+    implementation_steps:
+      - "Add Config.SystemPromptFile with json tag system_prompt_file,omitempty."
+      - "Add an in-memory prompt contents field such as Config.SystemPrompt with json:\"-\", or document an equivalent non-persisted location."
+      - "Update merge logic so non-empty CLI flags override saved SystemPromptFile."
+      - "Add tests for loading, saving, and merging the new field."
+      - "Confirm prompt contents are absent from serialized JSON."
+    success_indicators:
+      - "Config JSON supports system_prompt_file."
+      - "Serialized config never contains loaded prompt contents."
+      - "MergeFlags preserves a saved prompt file path when the flag is omitted."
+      - "MergeFlags uses a non-empty flag prompt path over a saved prompt path."
+      - "go test ./internal/config passes."
+    suggested_tests:
+      - TestMergeFlagsSystemPromptFileOverride
+      - TestConfigSaveDoesNotPersistSystemPromptContents
+      - TestLoadConfigWithSystemPromptFile
+    dependencies: []
+
+  - id: SPI-002
+    title: "Implement prompt file loading and validation"
+    status: pending
+    objective: >-
+      Create a reusable loader that validates the system prompt file and returns exact prompt text to use for injection.
+    context_budget:
+      target_tokens: 50000
+      files_to_load:
+        - internal/config/config.go
+        - internal/config/config_test.go
+        - internal/config/system_prompt.go
+        - internal/config/system_prompt_test.go
+      commands_to_run:
+        - go test ./internal/config
+    files_to_modify:
+      - internal/config/system_prompt.go
+      - internal/config/system_prompt_test.go
+    implementation_steps:
+      - "Create MaxSystemPromptBytes constant set to 256 KiB."
+      - "Reject missing paths with actionable errors."
+      - "Reject directories and non-regular files before reading."
+      - "Read at most MaxSystemPromptBytes + 1 bytes."
+      - "Reject files larger than MaxSystemPromptBytes."
+      - "Remove a leading UTF-8 BOM if present."
+      - "Reject empty content after BOM removal."
+      - "Reject invalid UTF-8."
+      - "Return the prompt string without trimming whitespace."
+    success_indicators:
+      - "Normal UTF-8 files load with exact content including trailing newline."
+      - "Missing file, directory, empty file, oversized file, and invalid UTF-8 cases fail."
+      - "Leading BOM is removed and non-leading BOM bytes are preserved."
+      - "Error strings do not contain prompt contents."
+      - "go test ./internal/config passes."
+    suggested_tests:
+      - TestLoadSystemPromptFilePreservesContent
+      - TestLoadSystemPromptFileRejectsMissing
+      - TestLoadSystemPromptFileRejectsDirectory
+      - TestLoadSystemPromptFileRejectsEmpty
+      - TestLoadSystemPromptFileRejectsOversized
+      - TestLoadSystemPromptFileRejectsInvalidUTF8
+      - TestLoadSystemPromptFileRemovesBOM
+    dependencies:
+      - SPI-001
+
+  - id: SPI-003
+    title: "Add CLI flag plumbing and startup failure behavior"
+    status: pending
+    objective: >-
+      Add --system-prompt-file to the Detour executable and fail fast during startup if the configured file cannot be loaded.
+    context_budget:
+      target_tokens: 50000
+      files_to_load:
+        - cmd/detour/main.go
+        - cmd/detour/main_test.go
+        - internal/config/config.go
+        - internal/config/system_prompt.go
+      commands_to_run:
+        - go test ./cmd/detour ./internal/config
+    files_to_modify:
+      - cmd/detour/main.go
+      - cmd/detour/main_test.go
+    implementation_steps:
+      - "Register --system-prompt-file string flag with clear optional help text."
+      - "Merge the flag with saved config using existing config merge flow."
+      - "If cfg.SystemPromptFile is non-empty, load the prompt after config validation and before proxy startup."
+      - "Store loaded content only in memory."
+      - "Return or print actionable startup errors without prompt contents."
+      - "Pass loaded prompt content into proxy.Config."
+    success_indicators:
+      - "detour --help includes --system-prompt-file."
+      - "Invalid prompt path exits non-zero before HTTP server creation."
+      - "Valid prompt path reaches proxy.Config as loaded text."
+      - "Existing behavior is unchanged when flag is absent."
+      - "go test ./cmd/detour ./internal/config passes."
+    suggested_tests:
+      - TestSystemPromptFileFlagRegistered
+      - TestStartupLoadsValidSystemPromptFile
+      - TestStartupRejectsInvalidSystemPromptFileBeforeProxyStart
+    dependencies:
+      - SPI-001
+      - SPI-002
+
+  - id: SPI-004
+    title: "Add proxy configuration field and JSON injection helper"
+    status: pending
+    objective: >-
+      Implement deterministic, pure JSON body transformation logic for injecting prompt content into Messages API request bodies.
+    context_budget:
+      target_tokens: 50000
+      files_to_load:
+        - internal/proxy/handler.go
+        - internal/proxy/handler_test.go
+        - internal/proxy/system_prompt.go
+        - internal/proxy/system_prompt_test.go
+      commands_to_run:
+        - go test ./internal/proxy
+    files_to_modify:
+      - internal/proxy/handler.go
+      - internal/proxy/system_prompt.go
+      - internal/proxy/system_prompt_test.go
+    implementation_steps:
+      - "Add SystemPrompt string to proxy.Config."
+      - "Create injectSystemPrompt(body []byte, prompt string) ([]byte, error)."
+      - "Return body unchanged when prompt is empty."
+      - "Parse request body into map[string]json.RawMessage."
+      - "Create injected text block {type: \"text\", text: prompt}."
+      - "For missing system, set a one-element system array."
+      - "For string system, convert to array with injected block first and original string block second."
+      - "For array system, prepend injected block and preserve existing blocks."
+      - "For any other system type, return a typed or clear error for HTTP 400 mapping."
+      - "Marshal and return the updated body."
+    success_indicators:
+      - "No-prompt helper path is a no-op."
+      - "Missing, string, and array system fields transform as specified."
+      - "Invalid system types return errors."
+      - "Unrelated request fields are preserved."
+      - "go test ./internal/proxy passes."
+    suggested_tests:
+      - TestInjectSystemPromptNoPromptNoop
+      - TestInjectSystemPromptAddsMissingSystem
+      - TestInjectSystemPromptPrependsStringSystem
+      - TestInjectSystemPromptPrependsArraySystem
+      - TestInjectSystemPromptRejectsInvalidSystemTypes
+      - TestInjectSystemPromptPreservesUnrelatedFields
+    dependencies:
+      - SPI-003
+
+  - id: SPI-005
+    title: "Integrate injection into /v1/messages request flow"
+    status: pending
+    objective: >-
+      Apply system prompt injection to /v1/messages requests before forwarding, while keeping other routes and existing local-model transformations correct.
+    context_budget:
+      target_tokens: 50000
+      files_to_load:
+        - internal/proxy/handler.go
+        - internal/proxy/handler_test.go
+        - internal/proxy/system_prompt.go
+        - internal/forward/forward.go
+        - internal/router/router.go
+      commands_to_run:
+        - go test ./internal/proxy
+    files_to_modify:
+      - internal/proxy/handler.go
+      - internal/proxy/handler_test.go
+    implementation_steps:
+      - "Call injectSystemPrompt after successful model peek and before forwarding."
+      - "Map injection errors to HTTP 400 invalid_request."
+      - "Ensure local route still strips thinking after injection."
+      - "Ensure passthrough route also receives injection for /v1/messages."
+      - "Do not change /v1/models, /health, or generic passthrough behavior."
+      - "Add handler-level tests with httptest upstreams to inspect forwarded bodies."
+    success_indicators:
+      - "Local /v1/messages upstream receives injected system prompt."
+      - "Passthrough /v1/messages upstream receives injected system prompt."
+      - "Empty prompt leaves /v1/messages request body unchanged except existing transformations."
+      - "Invalid system shape returns 400 and no upstream request."
+      - "Existing thinking-stripping tests still pass."
+      - "go test ./internal/proxy passes."
+    suggested_tests:
+      - TestMessagesInjectsSystemPromptForLocalRoute
+      - TestMessagesInjectsSystemPromptForPassthroughRoute
+      - TestMessagesDoesNotInjectWhenPromptEmpty
+      - TestMessagesRejectsInvalidSystemPromptShape
+      - TestMessagesInjectionDoesNotBreakThinkingStrip
+    dependencies:
+      - SPI-004
+
+  - id: SPI-006
+    title: "Perform end-to-end and launcher-adjacent validation"
+    status: pending
+    objective: >-
+      Verify the new feature works across startup preparation and proxy forwarding without exposing prompt contents through Claude launcher environment variables.
+    context_budget:
+      target_tokens: 50000
+      files_to_load:
+        - cmd/detour/main.go
+        - cmd/detour/main_test.go
+        - internal/launcher/launcher.go
+        - internal/launcher/launcher_test.go
+        - internal/config/config.go
+        - internal/proxy/handler.go
+      commands_to_run:
+        - go test ./cmd/detour ./internal/launcher ./internal/config ./internal/proxy
+    files_to_modify:
+      - cmd/detour/main_test.go
+      - internal/launcher/launcher_test.go
+    implementation_steps:
+      - "Confirm launcher env overrides do not include prompt contents or prompt path unless explicitly required by maintainers."
+      - "Add tests or assertions that prompt contents are absent from launcher-captured environment."
+      - "Add helper-level main package tests if needed to verify loaded prompt reaches proxy config."
+      - "Run relevant package tests."
+    success_indicators:
+      - "No prompt contents appear in ANTHROPIC_* env vars."
+      - "No tests require a real claude binary."
+      - "Startup helper tests pass for valid and invalid prompt files."
+      - "go test ./cmd/detour ./internal/launcher ./internal/config ./internal/proxy passes."
+    suggested_tests:
+      - TestLauncherDoesNotExposeSystemPromptEnv
+      - TestPrepareProxyConfigLoadsSystemPrompt
+      - TestPrepareProxyConfigRejectsBadSystemPromptFile
+    dependencies:
+      - SPI-003
+      - SPI-005
+
+  - id: SPI-007
+    title: "Update user-facing documentation"
+    status: pending
+    objective: >-
+      Document the new CLI flag, runtime behavior, merge behavior, and privacy considerations in human-facing docs.
+    context_budget:
+      target_tokens: 50000
+      files_to_load:
+        - README.md
+        - docs/system-prompt-injection-plan.md
+      commands_to_run:
+        - rg "system-prompt-file|System prompt|system prompt" README.md docs
+    files_to_modify:
+      - README.md
+    implementation_steps:
+      - "Add --system-prompt-file to usage or options documentation."
+      - "Document that the file is optional and read once at startup."
+      - "Document injection merge behavior with existing system fields."
+      - "Document that prompt content is sent to upstreams for /v1/messages requests."
+      - "Document UTF-8 and 256 KiB limits."
+    success_indicators:
+      - "README contains --system-prompt-file."
+      - "README says prompt file is read once at startup."
+      - "README says prompt contents are not persisted."
+      - "README warns prompt is sent upstream with message requests."
+      - "rg check finds relevant documentation entries."
+    suggested_tests: []
+    dependencies:
+      - SPI-005
+
+  - id: SPI-008
+    title: "Final verification and release readiness"
+    status: pending
+    objective: >-
+      Verify formatting, test coverage, backward compatibility, and safety properties before opening a PR.
+    context_budget:
+      target_tokens: 50000
+      files_to_load:
+        - "Only changed files and any failing test output."
+      commands_to_run:
+        - gofmt -w cmd/detour internal/config internal/proxy internal/launcher
+        - go test ./...
+        - rg "SystemPrompt|system-prompt-file|system_prompt" .
+    files_to_modify: []
+    implementation_steps:
+      - "Run gofmt on all changed Go packages."
+      - "Run full go test ./... suite."
+      - "Search for prompt-related identifiers and inspect for accidental logging, persistence, or env exposure."
+      - "Confirm no prompt contents are committed in tests beyond small synthetic strings."
+      - "Confirm behavior is backward compatible when --system-prompt-file is omitted."
+    success_indicators:
+      - "gofmt leaves no diff."
+      - "go test ./... passes."
+      - "Prompt contents are not logged, persisted, or added to launcher environment."
+      - "Only intended routes are affected."
+      - "PR description includes tests run and any unresolved open questions."
+    suggested_tests: []
+    dependencies:
+      - SPI-001
+      - SPI-002
+      - SPI-003
+      - SPI-004
+      - SPI-005
+      - SPI-006
+      - SPI-007
+open_questions:
+  - id: OQ-001
+    question: "Should injection apply to passthrough Anthropic /v1/messages requests, local-model requests only, or both?"
+    plan_default: "Both."
+  - id: OQ-002
+    question: "Should a CLI empty string be able to clear a saved system_prompt_file path?"
+    plan_default: "No new clearing semantics; edit config.json manually if needed."
+  - id: OQ-003
+    question: "Should injected prompt be prepended or appended relative to existing system content?"
+    plan_default: "Prepended."
+  - id: OQ-004
+    question: "Should the prompt file path be persisted?"
+    plan_default: "Path may be persisted; contents must not be persisted."
+final_acceptance_criteria:
+  - "--system-prompt-file is optional and documented."
+  - "Omitting --system-prompt-file preserves current behavior."
+  - "Prompt file is read once at startup and validated before proxy startup."
+  - "Prompt contents are injected into /v1/messages according to merge policy."
+  - "Invalid existing system field shapes return HTTP 400 without forwarding."
+  - "Prompt contents are not logged, persisted, or exposed in launcher environment."
+  - "go test ./... passes."
