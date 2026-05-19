@@ -21,10 +21,17 @@ var version = "dev"
 func main() {
 	// --- Flags ---
 	flags := &config.Config{}
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.StringVar(&flags.ModelName, "model-name", "", "alias sent as model name to Claude Code (required)")
 	flag.StringVar(&flags.ModelAPI, "model-api", "", "base URL of local inference server, e.g. http://192.168.0.28 (required)")
 	flag.IntVar(&flags.Port, "port", 0, "proxy listen port (default 8888)")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println("detour", version)
+		return
+	}
+
 	claudeArgs := flag.Args()
 
 	// --- Config: load saved, merge flags ---

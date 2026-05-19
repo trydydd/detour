@@ -3,8 +3,10 @@ IMAGE := detour:dev
 
 .PHONY: build test run clean snapshot release-check image image-test image-clean image-publish
 
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+
 build:
-	go build -o $(BIN) ./cmd/detour
+	go build -ldflags "-X main.version=$(VERSION)" -o $(BIN) ./cmd/detour
 
 test:
 	go test ./...
