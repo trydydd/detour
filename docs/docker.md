@@ -44,13 +44,13 @@ docker run -it --rm \
 ### 2. Persistent OAuth (Volume Mount)
 ```bash
 docker run -it --rm \
-  -v claude-config:/root/.claude \
+  -v "$HOME/.claude:/home/detour/.claude" \
   -e DETOUR_MODEL_NAME=red \
   -e DETOUR_MODEL_API=http://host.docker.internal:8080 \
   ghcr.io/trydydd/detour
 ```
 
-First run: `claude login` inside the container to save tokens.
+Mounts your host `~/.claude` directly, so existing credentials (`.credentials.json`) and settings are available immediately.
 
 ### 3. Ephemeral OAuth (Interactive)
 ```bash
@@ -79,11 +79,10 @@ docker run -it --rm \
 
 Claude Code will see your project at `/work`.
 
-### Claude Config Volume
-For persistent OAuth tokens across container restarts:
+### Claude Config (Pass-through from Host)
+Mount your host `~/.claude` so the container shares your existing credentials and settings:
 ```bash
-docker volume create claude-config
-docker run -it --rm -v claude-config:/root/.claude ghcr.io/trydydd/detour
+docker run -it --rm -v "$HOME/.claude:/home/detour/.claude" ghcr.io/trydydd/detour
 ```
 
 ---
@@ -118,7 +117,7 @@ Use `--` after the image name to pass flags to `claude`:
 docker run -it --rm ghcr.io/trydydd/detour -- --dangerously-skip-permissions
 
 # Run with verbose logging
-docker run -it --rm ghcr.io/trydydd/detour -- claude --verbose
+docker run -it --rm ghcr.io/trydydd/detour -- --verbose
 
 # Empty args (just run claude)
 docker run -it --rm ghcr.io/trydydd/detour --
@@ -167,17 +166,47 @@ The target is ≤350 MB. If your build exceeds this:
 
 ## Running Rootless
 
-The default image runs as root (UID 0). For non-root operation:
+The default image runs as the `detour` user (UID 1000, GID 1000). To revert
+to root for local development or legacy volume mounts:
 
 ```bash
-# Method 1: Use --user flag
-docker run -it --rm --user 1000:1000 ghcr.io/trydydd/detour
-
-# Method 2: Build with RUNTIME_USER=root to revert to root
+# Build a root-user variant
 docker build --build-arg RUNTIME_USER=root -t detour:root .
+
+# Or override at runtime (does not change file ownership inside the image)
+docker run -it --rm --user 0:0 ghcr.io/trydydd/detour
 ```
 
-When mounting volumes as non-root, ensure proper ownership:
+### Volume Mount Permissions
+
+Because the container runs as UID 1000, host directories or named volumes
+that the container needs to write to must be owned by UID 1000.
+
+**Host directory mount:**
 ```bash
-sudo chown -R 1000:1000 /path/to/mount
+# Adjust ownership on the host before mounting
+sudo chown -R 1000:1000 /path/to/project
+
+docker run -it --rm \
+  -v /path/to/project:/work \
+  -w /work \
+  ghcr.io/trydydd/detour
 ```
+
+**Claude config directory (`~/.claude`):**
+
+The container needs read/write access to the mounted `.claude` directory.
+If your host user's UID matches the container's `detour` user (UID 1000), no
+adjustment is needed:
+
+```bash
+docker run -it --rm -v "$HOME/.claude:/home/detour/.claude" ghcr.io/trydydd/detour
+```
+
+If your host user is root or a different UID, fix ownership first:
+```bash
+sudo chown -R 1000:1000 "$HOME/.claude"
+```
+
+If you use `--build-arg RUNTIME_USER=root`, mount to `/root/.claude` instead
+and no ownership adjustment is needed.

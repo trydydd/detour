@@ -49,6 +49,60 @@ Flags are saved to `~/.detour/config.json` on first run. Subsequent invocations 
 detour   # uses saved config
 ```
 
+## Run with Docker
+
+The official container image is available at `ghcr.io/trydydd/detour`.
+
+
+**Persistent OAuth via volume:**
+```bash
+docker run -it --rm \
+  -v "$HOME/.claude:/home/detour/.claude" \
+  -e DETOUR_MODEL_NAME=red \
+  -e DETOUR_MODEL_API=http://host.docker.internal:8080 \
+  ghcr.io/trydydd/detour
+```
+
+**Passing claude flags (e.g., skip permissions):**
+```bash
+docker run -it --rm \
+  -e DETOUR_MODEL_NAME=red \
+  -e DETOUR_MODEL_API=http://host.docker.internal:8080 \
+  ghcr.io/trydydd/detour -- --dangerously-skip-permissions
+```
+
+Environment variables `DETOUR_MODEL_NAME`, `DETOUR_MODEL_API`, and `DETOUR_PORT` configure the detour proxy. See [docs/docker.md](docs/docker.md) for full documentation including auth modes, volume strategy, networking, and troubleshooting.
+
+**Using a local Docker image:**
+
+Run with a specific model and inference server:
+```bash
+docker run --rm -it \
+  -u $(id -u):$(id -g) \
+  -v "$(pwd):/workspace" \
+  -v "$HOME/.config/claude-container:/claude" \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -e "CLAUDE_CONFIG_DIR=/claude" \
+  detour:latest --model-name red --model-api http://192.168.0.214:8000 -- --model Qwen/Qwen3.6-35B-A3B-FP8
+```
+
+With a prompt:
+```bash
+docker run --rm -it \
+  -u $(id -u):$(id -g) \
+  -v "$(pwd):/workspace" \
+  -v "$HOME/.config/claude-container:/claude" \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -e "CLAUDE_CONFIG_DIR=/claude" \
+  detour:latest --model-name red --model-api http://192.168.0.214:8000 -- --model red -p "what is the capital of france"
+```
+
+This configuration:
+- Mounts the current directory for file access
+- Persists Claude configuration in `~/.config/claude-container`
+- Exposes the Docker socket for container-in-container support
+- Sets `CLAUDE_CONFIG_DIR` to use the mounted config path
+
 ### Flags
 
 | Flag | Default | Description |

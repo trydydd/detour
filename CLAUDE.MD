@@ -48,6 +48,10 @@ Always use jCodemunch-MCP tools for code navigation. Never fall back to Read, Gr
 
 **After editing a file:** `index_file { "path": "/abs/path/to/file" }` to keep the index fresh.
 
+## Docker Image
+
+This project ships a container image for running detour with Claude Code. See `docs/docker.md` for usage documentation. The Docker build tasks are tracked in `work-ledger-docker.yaml`.
+
 ## Detour Proxy Notes
 
 The `/v1/models` endpoint on the proxy passes through to Anthropic and cannot be tested with `curl` without valid Anthropic auth credentials. Do not suggest testing `/v1/models` with curl or curl alternatives—this will always fail with an authentication error. The proxy endpoint is only testable by Claude Code itself, which has internal authentication credentials.

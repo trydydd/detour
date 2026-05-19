@@ -25,6 +25,9 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /usr/local/bin/detour .
 # Stage 2: Runtime - minimal Alpine image with detour and Claude Code
 FROM alpine:3.20
 
+# Set to "root" to revert to UID 0: --build-arg RUNTIME_USER=root
+ARG RUNTIME_USER=detour
+
 # Install runtime dependencies
 # bash: Claude Code Bash tool defaults to bash semantics
 # git: Claude Code uses git for status, diff, commits
@@ -47,6 +50,12 @@ RUN apk add --no-cache \
 RUN apk add --no-cache nodejs npm && \
     npm install -g @anthropic-ai/claude-code
 
+# Create non-root user for container runtime (UID/GID 1000)
+RUN addgroup -g 1000 detour && \
+    adduser -D -u 1000 -G detour detour && \
+    mkdir -p /home/detour/.claude && \
+    chown -R detour:detour /home/detour
+
 # Set sandbox environment variable
 ENV IS_SANDBOX=1
 
@@ -56,6 +65,9 @@ COPY --from=builder /usr/local/bin/detour /usr/local/bin/detour
 # Copy entrypoint script (created in D2)
 COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Switch to the runtime user (detour=UID 1000 by default)
+USER ${RUNTIME_USER}
 
 # Set entrypoint — the script always invokes claude unless --no-claude is given
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
