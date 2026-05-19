@@ -1,0 +1,116 @@
+# 05. Thinking Block Stripping for Local Inference
+
+## Topic Statement
+
+Remove thinking content blocks from requests and responses when routing to local inference servers to maintain compatibility with Anthropic API signature requirements.
+
+## Scope
+
+**In-scope:**
+- Removal of `thinking` field from request bodies
+- Removal of thinking content blocks from response bodies (JSON and streaming)
+- Filtering of thinking-related beta tokens from headers
+- Streaming event filtering for thinking blocks
+
+**Boundaries:**
+- Input: JSON request/response bodies or SSE stream
+- Output: Modified JSON or SSE stream without thinking content
+- Only applies to local routing, never to passthrough
+
+## Data Contracts
+
+### Thinking Field in Request
+
+```json
+{
+  "thinking": {
+    "type": "enabled",
+    "budget_tokens": 5000
+  }
+}
+```
+
+### Thinking Block in Response Content
+
+```json
+{
+  "type": "thinking",
+  "thinking": "reasoning text",
+  "signature": "signature string"
+}
+```
+
+### Thinking Beta Token
+
+```
+interleaved-thinking-2025-05-14
+```
+
+## Behaviors
+
+### Request Body Transformation
+
+Strip thinking from JSON request body:
+
+1. Parse request body as JSON object
+2. If `thinking` field present, delete it
+3. Re-serialize to JSON
+4. Return modified body
+
+### Non-Streaming Response Transformation
+
+Remove thinking blocks from JSON response:
+
+1. Parse response as JSON object
+2. Extract `content` array from response
+3. Iterate through content blocks
+4. For each block, check if `type` equals "thinking"
+5. Exclude thinking blocks from output array
+6. Re-serialize content array to JSON
+7. Replace original content with filtered array
+8. Re-serialize entire response
+9. Return modified body
+
+### Streaming Response Transformation
+
+Filter thinking events from SSE stream:
+
+1. Initialize empty thinking block index tracker
+2. Parse stream using buffered scanner (64 KiB max buffer), grouping into events (blank line separates events)
+3. For each complete event:
+   - If event type is `content_block_start` with `content_block.type == "thinking"`:
+     - Record the block index as thinking
+     - Skip this event (do not forward)
+   - If event type is `content_block_delta` or `content_block_stop`:
+     - Check if index is in thinking tracker
+     - If yes, skip this event
+     - If no, forward event
+   - For all other event types: forward unchanged
+4. Flush after each forwarded event
+
+**Trailing event handling:** If the stream ends without a final blank line (malformed), any pending event is processed and forwarded without requiring a blank line terminator.
+
+### Beta Header Filtering
+
+Remove thinking tokens from `Anthropic-Beta` header:
+
+1. Split header value by comma
+2. Trim whitespace from each token
+3. Exclude tokens containing "thinking" substring
+4. Join remaining tokens with comma
+5. Return filtered header value
+
+## State Transitions
+
+| Input | Transformation | Output |
+|-------|----------------|--------|
+| Request with thinking field | Delete field | Request without thinking |
+| Response with thinking blocks | Filter array | Response without thinking blocks |
+| SSE stream with thinking events | Drop events | Stream without thinking events |
+| Beta header with thinking token | Remove token | Filtered header |
+
+## Notable Behaviors
+
+1. Thinking blocks stripped because local inference servers cannot produce valid Anthropic signatures; blocks with invalid signatures cause subsequent passthrough requests to fail with 400 invalid-signature error
+2. Streaming filter tracks thinking block indices to correctly drop all events belonging to thinking blocks (start, delta, stop)
+3. Message start event patching is handled separately (message-start-patching spec)
