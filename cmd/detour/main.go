@@ -58,6 +58,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "detour: warning: could not save config: %v\n", err)
 	}
 
+	checkUpstream(cfg.ModelAPI)
+
 	// --- Start proxy ---
 	proxyCfg := &proxy.Config{
 		ModelName:            cfg.ModelName,
@@ -127,4 +129,15 @@ func fatalf(format string, args ...any) {
 
 func buildListenAddr(port int) string {
 	return "127.0.0.1:" + fmt.Sprint(port)
+}
+
+func checkUpstream(modelAPI string) {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(modelAPI + "/v1/models")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "detour: warning: model API at %s is not reachable: %v\n", modelAPI, err)
+		return
+	}
+	resp.Body.Close()
+	fmt.Fprintf(os.Stderr, "detour: upstream %s/v1/models %s\n", modelAPI, resp.Status)
 }
